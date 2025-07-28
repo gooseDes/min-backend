@@ -4,7 +4,7 @@
   "description": "",
   "main": "server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "db": "node show_tables.js"
   },
   "repository": {
     "type": "git",
@@ -13,16 +13,19 @@
   "keywords": [],
   "author": "goose_des",
   "license": "ISC",
-  "type": "commonjs",
+  "type": "module",
   "bugs": {
     "url": "https://github.com/gooseDes/min-backend/issues"
   },
   "homepage": "https://github.com/gooseDes/min-backend#readme",
   "dependencies": {
+    "bcrypt": "^6.0.0",
     "cors": "^2.8.5",
     "dotenv": "^17.2.1",
     "express": "^5.1.0",
+    "jsonwebtoken": "^9.0.2",
     "multer": "^2.0.2",
+    "mysql2": "^3.14.2",
     "socket.io": "^4.8.1"
   }
 }
