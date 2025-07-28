@@ -12,7 +12,7 @@ const app = express();
 const server = createServer(app);
 const io = new Server(server, {
     cors: {
-        origin: ["http://localhost:3000", "https://msg-min.xyz"]
+        origin: ["http://localhost:3000", "http://192.168.0.120:3000", "https://msg-min.xyz"]
     }
 });
 
@@ -76,8 +76,8 @@ app.post('/login', async (req, res) => {
             if (!isMatch) {
                 return res.status(400).json({ msg: 'Incorrect password' });
             }
-            const token = jwt.sign({ id: user.id, name: user.name, email: user.email }, JWT_SECRET, { expiresIn: '1h' });
-            return res.json({ token: token });
+            const token = jwt.sign({ id: user.id, name: user.name, email: user.email }, JWT_SECRET, { expiresIn: '7d' });
+            return res.json({ token: token, username: user.name });
         })
     })
 });
@@ -102,7 +102,22 @@ io.on('connection', (socket) => {
     console.log(`User ${socket.id} connected!`)
 
     socket.on('msg', (data) => {
-        io.emit('message', data);
+        if (!data || !data.text) {
+            socket.emit('error', { msg: 'Message cannot be empty' });
+        }
+        const to_send = {
+            text: data.text,
+            author: socket.user.name
+        }
+        io.emit('message', to_send);
+    });
+
+    socket.on('getName', data => {
+        try {
+            socket.emit('username', socket.user.name);
+        } catch (error) {
+            socket.emit('error', { msg: 'Error getting username' });
+        }
     });
 
     socket.on('disconnect', () => {
@@ -111,6 +126,6 @@ io.on('connection', (socket) => {
 });
 
 const PORT = process.env.PORT || 5000;
-server.listen(PORT, () => {
+server.listen({ port: PORT, hostname: '0.0.0.0' }, () => {
     console.log(`Server is running on ${PORT} port!`);
 });
