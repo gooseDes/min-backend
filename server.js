@@ -105,26 +105,6 @@ io.on('connection', (socket) => {
         io.emit('message', data);
     });
 
-    socket.on('reg', (data) => {
-        if (!data.username || !data.email || !data.password) {
-            socket.emit('error', { msg: 'All fields are required!' });
-            return;
-        }
-        if (data.password.length < 6) {
-            socket.emit('error', { msg: 'Password must be at least 6 characters long!' });
-            return;
-        }
-        bcrypt.hash(data.password, 10, async (error, hash) => {
-            if (error) {
-                socket.emit('error', { msg: 'Error hashing password!' });
-                return;
-            }
-            data.password = hash;
-            connection.query('INSERT INTO users (name, email, password) VALUES (?, ?, ?)', [data.username, data.email, data.password])
-            socket.emit('success', { msg: 'Registration successful!' });
-        });
-    });
-
     socket.on('disconnect', () => {
         console.log(`User ${socket.id} disconnected!`);
     });
