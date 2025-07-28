@@ -22,7 +22,7 @@ app.use(json())
 const JWT_SECRET = process.env.JWT_SECRET || 'defaultsecret';
 
 const connection = createConnection({
-  host: 'localhost',
+  host: process.env.DB_HOST || 'localhost',
   user: 'root',
   password: 'root'
 });
