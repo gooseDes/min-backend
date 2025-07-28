@@ -12,6 +12,10 @@ jobs:
     - name: Checkout repo
       uses: actions/checkout@v3
 
+    - name: Create .env file
+      run: |
+        echo "JWT_SECRET=${{ secrets.JWT_SECRET }}" >> .env
+
     - name: Build Docker image
       run: docker build -t min-backend .
 
