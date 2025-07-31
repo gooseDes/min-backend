@@ -200,6 +200,12 @@ io.on('connection', (socket) => {
     });
 });
 
+setInterval(() => {
+    connection.ping(err => {
+        if (err) console.error('MySQL ping error:', err);
+    });
+}, 60000);
+
 const PORT = process.env.PORT || 5000;
 server.listen({ port: PORT, hostname: '0.0.0.0' }, () => {
     console.log(`Server is running on ${PORT} port!`);
