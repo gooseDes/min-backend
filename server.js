@@ -80,9 +80,6 @@ app.post('/register', async (req, res) => {
             }
             connection.query('INSERT INTO users (name, email, password) VALUES (?, ?, ?)', [username, email, hash])
             const token = jwt.sign({ id: user.id, name: user.name, email: user.email }, JWT_SECRET, { expiresIn: '7d' });
-            if (!token) {
-                return res.status(500).json({ msg: 'Error generating token' });
-            }
             return res.json({ token: token });
         });
     });
