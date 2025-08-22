@@ -153,7 +153,7 @@ io.on('connection', (socket) => {
             author: socket.user.name
         }
         io.emit('message', to_send);
-        connection.query('INSERT INTO messages (chat_id, sender_id, content) VALUES (?, ?, ?)', [1, socket.user.id, data.text], (error, results) => {
+        connection.query('INSERT INTO messages (chat_id, sender_id, content) VALUES (?, ?, ?)', [data.chat, socket.user.id, data.text], (error, results) => {
             if (error) {
                 socket.emit('error', { msg: 'MySQL error happened while trying to save your message.' });
             }
@@ -196,6 +196,85 @@ io.on('connection', (socket) => {
             socket.emit('username', socket.user.name);
         } catch (error) {
             socket.emit('error', { msg: 'Error getting username' });
+        }
+    });
+
+    socket.on('createChat', data => {
+        try {
+            if (!data || !data.nickname) {
+                socket.emit('createChatResult', { success: false, msg: 'Nickname is required' });
+                return;
+            }
+            connection.query('SELECT id FROM users WHERE name = ?', [data.nickname], (error, result) => {
+                if (error) {
+                    socket.emit('createChatResult', { success: false, msg: 'No such user' });
+                    return;
+                }
+                if (result.length === 0) {
+                    socket.emit('createChatResult', { success: false, msg: 'No such user' });
+                    return;
+                }
+                const userId = result[0].id;
+                const chatUsers = [socket.user.id, userId];
+                const chatName = chatUsers.sort().join('-');
+                connection.query('SELECT id FROM chats WHERE name = ?', [chatName], (error, results) => {
+                    if (error) {
+                        socket.emit('createChatResult', { success: false, msg: 'MySQL error while checking chat existence' });
+                        return;
+                    }
+                    if (results.length > 0) {
+                        socket.emit('createChatResult', { success: false, msg: 'Chat already exists' });
+                        return;
+                    }
+                    connection.query('INSERT INTO chats (type, name) VALUES (?, ?)', ['private', chatName], (error, results) => {
+                        if (error) {
+                            socket.emit('createChatResult', { success: false, msg: 'MySQL error while creating chat' });
+                            return;
+                        }
+                        for (let id of chatUsers) {
+                            connection.query('INSERT INTO chat_users (chat_id, user_id) VALUES (?, ?)', [results.insertId, id], (error, results) => {
+                                if (error) {
+                                    socket.emit('createChatResult', { success: false, msg: 'MySQL error while adding users to chat' });
+                                    return;
+                                }
+                            });
+                        }
+                        socket.emit('createChatResult', { success: true, chatId: results.insertId, chatName: chatName, users: chatUsers });
+                    });
+                });
+            });
+        } catch (error) {
+            socket.emit('createChatResult', { success: false, msg: 'Error creating chat' });
+        }
+    });
+
+    socket.on('getChats', data => {
+        try {
+            connection.query(`SELECT 
+                                chats.id,
+                                chats.type,
+                                CASE 
+                                    WHEN chats.type = 'private' THEN (
+                                        SELECT u.name 
+                                        FROM chat_users cu
+                                        JOIN users u ON cu.user_id = u.id
+                                        WHERE cu.chat_id = chats.id AND cu.user_id != ?
+                                        LIMIT 1
+                                    )
+                                    ELSE chats.name
+                                END AS name
+                            FROM chats
+                            WHERE chats.id IN (
+                                SELECT chat_id FROM chat_users WHERE user_id = ?
+                            )`, [socket.user.id, socket.user.id], (error, results) => {
+                if (error) {
+                    socket.emit('error', { msg: 'MySQL error while fetching chats' });
+                    return;
+                }
+                socket.emit('chats', { chats: results });
+            });
+        } catch (error) {
+            socket.emit('error', { msg: 'Error getting chats' });
         }
     });
 });
