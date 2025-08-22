@@ -79,7 +79,7 @@ app.post('/register', async (req, res) => {
                 return res.status(400).json({ msg: 'Error hashing password!' });
             }
             connection.query('INSERT INTO users (name, email, password) VALUES (?, ?, ?)', [username, email, hash])
-            const token = jwt.sign({ name: username, email: email }, JWT_SECRET, { expiresIn: '7d' });
+            const token = jwt.sign({ id: user.id, name: user.name, email: user.email }, JWT_SECRET, { expiresIn: '7d' });
             if (!token) {
                 return res.status(500).json({ msg: 'Error generating token' });
             }
@@ -107,6 +107,9 @@ app.post('/login', async (req, res) => {
                 return res.status(400).json({ msg: 'Incorrect password' });
             }
             const token = jwt.sign({ id: user.id, name: user.name, email: user.email }, JWT_SECRET, { expiresIn: '7d' });
+            if (!token) {
+                return res.status(500).json({ msg: 'Error generating token' });
+            }
             return res.json({ token: token, username: user.name });
         })
     })
