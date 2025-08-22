@@ -155,7 +155,7 @@ io.on('connection', (socket) => {
         io.emit('message', to_send);
         connection.query('INSERT INTO messages (chat_id, sender_id, content) VALUES (?, ?, ?)', [data.chat, socket.user.id, data.text], (error, results) => {
             if (error) {
-                socket.emit('error', { msg: 'MySQL error happened while trying to save your message.' });
+                socket.emit('error', { msg: 'MySQL error happened while trying to save your message. ' + error.message });
             }
         });
     });
