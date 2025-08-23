@@ -78,9 +78,10 @@ app.post('/register', async (req, res) => {
             if (error) {
                 return res.status(400).json({ msg: 'Error hashing password!' });
             }
-            connection.query('INSERT INTO users (name, email, password) VALUES (?, ?, ?)', [username, email, hash])
-            const token = jwt.sign({ id: user.id, name: user.name, email: user.email }, JWT_SECRET, { expiresIn: '7d' });
-            return res.json({ token: token });
+            connection.query('INSERT INTO users (name, email, password) VALUES (?, ?, ?)', [username, email, hash], (error, result) => {
+                const token = jwt.sign({ id: result.insertId, name: username, email: email }, JWT_SECRET, { expiresIn: '7d' });
+                return res.json({ token: token });
+            });
         });
     });
 });
