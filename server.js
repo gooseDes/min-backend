@@ -6,6 +6,10 @@ import cors from 'cors';
 import bcrypt from 'bcrypt';
 import dotenv from 'dotenv';
 import jwt from 'jsonwebtoken';
+import path from 'path';
+import fs from 'fs';
+import multer from 'multer';
+import sharp from 'sharp';
 dotenv.config();
 
 const app = express();
@@ -18,6 +22,14 @@ const io = new Server(server, {
 
 app.use(cors())
 app.use(json())
+
+// Creating folder for uploads and avatars
+const uploadsDir = path.join(process.cwd(), "uploads");
+if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir);
+const avatarsDir = path.join(uploadsDir, "avatars");
+if (!fs.existsSync(avatarsDir)) fs.mkdirSync(avatarsDir);
+
+const upload = multer({ dest: "temp/" });
 
 const JWT_SECRET = process.env.JWT_SECRET || 'defaultsecret';
 
@@ -61,6 +73,49 @@ const connection = createConnection({
   multipleStatements: false
 });
 
+// Some function lol :3
+function authMiddleware(req, res, next) {
+    const authHeader = req.headers["authorization"];
+    if (!authHeader) return res.status(401).json({ error: "No token" });
+
+    const token = authHeader.split(" ")[1];
+    if (!token) return res.status(401).json({ error: "Invalid token" });
+
+    try {
+        const decoded = jwt.verify(token, JWT_SECRET);
+        req.userId = decoded.id;
+        next();
+    } catch (err) {
+        return res.status(403).json({ error: "Invalid Token" });
+    }
+}
+
+// Route for loading avatars
+app.post("/upload-avatar", authMiddleware, upload.single("avatar"), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: "File is not loaded" });
+
+    const userId = req.userId;
+    const outPath = path.join(avatarsDir, `${userId}.webp`);
+
+    await sharp(req.file.path)
+      .resize(512, 512, { fit: "cover" })
+      .toFormat("webp", { quality: 80 })
+      .toFile(outPath);
+
+    fs.unlinkSync(req.file.path);
+
+    res.json({ url: `/avatars/${userId}.webp` });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Error loading" });
+  }
+});
+
+
+// Hosting avatars
+app.use("/avatars", express.static(avatarsDir));
+
 // Signing up
 app.post('/register', async (req, res) => {
     const { email, username, password } = req.body;
@@ -80,7 +135,7 @@ app.post('/register', async (req, res) => {
             }
             connection.query('INSERT INTO users (name, email, password) VALUES (?, ?, ?)', [username, email, hash], (error, result) => {
                 const token = jwt.sign({ id: result.insertId, name: username, email: email }, JWT_SECRET, { expiresIn: '7d' });
-                return res.json({ token: token });
+                return res.json({ id: result.insertId, token: token });
             });
         });
     });
@@ -108,7 +163,7 @@ app.post('/login', async (req, res) => {
             if (!token) {
                 return res.status(500).json({ msg: 'Error generating token' });
             }
-            return res.json({ token: token, username: user.name });
+            return res.json({ token: token, username: user.name, id: user.id });
         })
     })
 });
