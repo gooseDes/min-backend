@@ -16,12 +16,15 @@ const app = express();
 const server = createServer(app);
 const io = new Server(server, {
     cors: {
-        origin: ["http://localhost:3000", "http://192.168.0.120:3000", "https://msg-min.xyz"]
+        origin: ["http://localhost:3000", "http://192.168.0.120:3000", "https://msg-min.xyz"],
+        credentials: true
     }
 });
 
 app.use(cors())
 app.use(json())
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
 // Creating folder for uploads and avatars
 const uploadsDir = path.join(process.cwd(), "uploads");
@@ -29,7 +32,7 @@ if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir);
 const avatarsDir = path.join(uploadsDir, "avatars");
 if (!fs.existsSync(avatarsDir)) fs.mkdirSync(avatarsDir);
 
-const upload = multer({ dest: "temp/" });
+const upload = multer({ dest: "temp/", limits: { fileSize: 5 * 1024 * 1024 } });
 
 const JWT_SECRET = process.env.JWT_SECRET || 'defaultsecret';
 
