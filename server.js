@@ -32,7 +32,7 @@ if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir);
 const avatarsDir = path.join(uploadsDir, "avatars");
 if (!fs.existsSync(avatarsDir)) fs.mkdirSync(avatarsDir);
 
-const upload = multer({ dest: "temp/", limits: { fileSize: 5 * 1024 * 1024 } });
+const upload = multer({ dest: "temp/", limits: { fileSize: 10 * 1024 * 1024 } });
 
 const JWT_SECRET = process.env.JWT_SECRET || 'defaultsecret';
 
@@ -107,6 +107,14 @@ app.post("/upload-avatar", authMiddleware, upload.single("avatar"), async (req, 
       .toFile(outPath);
 
     fs.unlinkSync(req.file.path);
+
+    fs.readdir('temp', (err, files) => {
+        files.forEach(file => {
+            const filePath = path.join(directoryPath, file);
+
+            fs.unlinkSync(filePath)
+        });
+    });
 
     res.json({ url: `/avatars/${userId}.webp` });
   } catch (err) {
