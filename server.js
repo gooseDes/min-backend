@@ -1,5 +1,5 @@
 import { createConnection } from 'mysql2';
-import express, { json } from 'express';
+import express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import cors from 'cors';
@@ -12,17 +12,21 @@ import multer from 'multer';
 import sharp from 'sharp';
 dotenv.config();
 
+const origins = ["http://localhost:3000", "http://192.168.0.120:3000", "https://msg-min.xyz"];
+
 const app = express();
 const server = createServer(app);
 const io = new Server(server, {
     cors: {
-        origin: ["http://localhost:3000", "http://192.168.0.120:3000", "https://msg-min.xyz"],
+        origin: origins,
         credentials: true
     }
 });
 
-app.use(cors())
-app.use(json())
+app.use(cors({
+    origin: origins,
+    credentials: true
+}))
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
