@@ -321,32 +321,73 @@ io.on('connection', (socket) => {
 
     socket.on('getChats', data => {
         try {
-            connection.query(`SELECT 
-                                chats.id,
-                                chats.type,
-                                CASE 
-                                    WHEN chats.type = 'private' THEN (
-                                        SELECT u.name 
-                                        FROM chat_users cu
-                                        JOIN users u ON cu.user_id = u.id
-                                        WHERE cu.chat_id = chats.id AND cu.user_id != ?
-                                        LIMIT 1
-                                    )
-                                    ELSE chats.name
-                                END AS name
-                            FROM chats
-                            WHERE chats.id IN (
-                                SELECT chat_id FROM chat_users WHERE user_id = ?
-                            )`, [socket.user.id, socket.user.id], (error, results) => {
+            connection.query(`
+                SELECT 
+                    chats.id,
+                    chats.type,
+                    CASE 
+                        WHEN chats.type = 'private' THEN (
+                            SELECT u.name 
+                            FROM chat_users cu
+                            JOIN users u ON cu.user_id = u.id
+                            WHERE cu.chat_id = chats.id AND cu.user_id != ?
+                            LIMIT 1
+                        )
+                        ELSE chats.name
+                    END AS name
+                FROM chats
+                WHERE chats.id IN (
+                    SELECT chat_id FROM chat_users WHERE user_id = ?
+                )
+            `, [socket.user.id, socket.user.id], (error, chats) => {
                 if (error) {
                     socket.emit('error', { msg: 'MySQL error while fetching chats' });
                     return;
                 }
-                socket.emit('chats', { chats: results });
+                if (!chats.length) {
+                    socket.emit('chats', { chats: [] });
+                    return;
+                }
+                const chatIds = chats.map(c => c.id);
+                connection.query(`
+                    SELECT cu.chat_id, u.id as user_id, u.name
+                    FROM chat_users cu
+                    JOIN users u ON cu.user_id = u.id
+                    WHERE cu.chat_id IN (?)
+                `, [chatIds], (err, participants) => {
+                    if (err) {
+                        socket.emit('error', { msg: 'MySQL error while fetching participants' });
+                        return;
+                    }
+                    const participantsByChat = {};
+                    for (const p of participants) {
+                        if (!participantsByChat[p.chat_id]) participantsByChat[p.chat_id] = [];
+                        participantsByChat[p.chat_id].push({ id: p.user_id, name: p.name });
+                    }
+                    const chatsWithParticipants = chats.map(chat => ({
+                        ...chat,
+                        participants: participantsByChat[chat.id] || []
+                    }));
+                    socket.emit('chats', { chats: chatsWithParticipants });
+                });
             });
         } catch (error) {
             socket.emit('error', { msg: 'Error getting chats' });
         }
+    });
+
+    socket.on('getUserInfo', data => {
+        if (!data || (!data.id && !data.name)) {
+            socket.emit('error', { msg: 'No data provided' });
+            return;
+        }
+        connection.query('SELECT id, name FROM users WHERE id = ? OR name = ?', [data.id || 0, data.name || ''], (error, results) => {
+            if (error) {
+                socket.emit('error', { msg: 'MySQL error while fetching user info' });
+                return;
+            }
+            socket.emit('userInfo', { user: results[0] });
+        });
     });
 });
 
