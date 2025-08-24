@@ -41,6 +41,7 @@ jobs:
           docker stop min-container || true
           docker rm min-container || true
           mkdir -p ~/min/uploads || true
-          docker run -d -p 5000:5000 --name min-container --restart unless-stopped --network min -v ~/min/uploads:/uploads min-backend
+          docker network create min || true
+          docker run -d -p 5000:5000 --name min-container --restart unless-stopped --network min -v ~/min/uploads:/app/uploads min-backend
           docker rmi $(docker images -f "dangling=true" -q) || true
         EOF

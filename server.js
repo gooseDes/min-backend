@@ -27,7 +27,9 @@ app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
 // Creating folder for uploads and avatars
-const uploadsDir = path.join(process.cwd(), "uploads");
+const appDir = path.join("", "app");
+if (!fs.existsSync(appDir)) fs.mkdirSync(appDir);
+const uploadsDir = path.join(appDir, "uploads");
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir);
 const avatarsDir = path.join(uploadsDir, "avatars");
 if (!fs.existsSync(avatarsDir)) fs.mkdirSync(avatarsDir);
