@@ -258,7 +258,11 @@ app.post("/send-to/:userId", (req, res) => {
                 let subscription;
                 try {
                     console.log(row);
-                    subscription = JSON.parse(row.subscription);
+                    if (typeof row.subscription == 'string') {
+                        subscription = JSON.parse(row.subscription);
+                    } else {
+                        subscription = row.subscription;
+                    }
                     webpush.sendNotification(subscription, payload)
                     .then(() => {
                         sentCount++;
