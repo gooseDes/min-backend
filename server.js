@@ -255,14 +255,19 @@ app.post("/send-to/:userId", (req, res) => {
             let sentCount = 0;
 
             rows.forEach(row => {
-                const subscription = JSON.parse(row.subscription);
-                webpush.sendNotification(subscription, payload)
-                .then(() => {
-                    sentCount++;
-                })
-                .catch(err => {
-                    console.error("Push failed for", subscription.endpoint, err);
-                });
+                let subscription;
+                try {
+                    subscription = JSON.parse(row.subscription);
+                    webpush.sendNotification(subscription, payload)
+                    .then(() => {
+                        sentCount++;
+                    })
+                    .catch(err => {
+                        console.error("Push failed for", subscription.endpoint, err);
+                    });
+                } catch (error) {
+                    console.log(error);
+                }
             });
 
             console.log(payload);
