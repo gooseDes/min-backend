@@ -237,7 +237,6 @@ app.post('/subscribe', (req, res) => {
 
 // Route for sending push to someone (FOR TEST!)
 app.post("/send-to/:userId", (req, res) => {
-    console.log("send-to called", req.params.userId, req.body);
     const userId = req.params.userId;
     const { title, message } = req.body;
 
@@ -257,15 +256,11 @@ app.post("/send-to/:userId", (req, res) => {
             rows.forEach(row => {
                 let subscription;
                 try {
-                    console.log(row);
-                    console.log(typeof row);
                     if (typeof row.subscription == 'string') {
                         subscription = JSON.parse(row.subscription);
                     } else {
                         subscription = row.subscription;
                     }
-                    console.log('sub:');
-                    console.log(subscription);
                     webpush.sendNotification(subscription, payload)
                     .then(() => {
                         sentCount++;
@@ -278,7 +273,6 @@ app.post("/send-to/:userId", (req, res) => {
                 }
             });
 
-            console.log(payload);
             res.json({ ok: true, subscriptions: rows.length });
         }
     );
@@ -305,15 +299,52 @@ io.on('connection', (socket) => {
         if (!data || !data.text || !data.chat) {
             socket.emit('error', { msg: 'Message is empty or some required arguments are missing' });
         }
+
+        // Sending to others with ws
         const to_send = {
             text: data.text,
             author: socket.user.name
         }
         io.emit('message', to_send);
+
+        // Saving to db
         connection.query('INSERT INTO messages (chat_id, sender_id, content) VALUES (?, ?, ?)', [data.chat, socket.user.id, data.text], (error, results) => {
             if (error) {
                 socket.emit('error', { msg: 'MySQL error happened while trying to save your message.' });
             }
+        });
+
+        // Sending push messages
+        connection.query("SELECT user_id FROM chat_users WHERE chat_id=?", [data.chat], (error, results) => {
+            if (error) {return};
+            results.forEach(row => {
+                connection.query("SELECT subscription FROM subscriptions WHERE user_id = ?", [row.user_id], (error, subscriptions) => {
+                    if (!error) {
+                        const payload = JSON.stringify({ title: `Chat ${data.chat}`, message: data.text });
+                        let sentCount = 0;
+
+                        subscriptions.forEach(sub => {
+                            let subscription;
+                            try {
+                                if (typeof sub.subscription == 'string') {
+                                    subscription = JSON.parse(sub.subscription);
+                                } else {
+                                    subscription = sub.subscription;
+                                }
+                                webpush.sendNotification(subscription, payload)
+                                .then(() => {
+                                    sentCount++;
+                                })
+                                .catch(err => {
+                                    console.error("Push failed for", subscription.endpoint, err);
+                                });
+                            } catch (error) {
+                                console.log(error);
+                            }
+                        });
+                    }
+                });
+            });
         });
     });
 
