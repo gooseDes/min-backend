@@ -16,6 +16,8 @@ jobs:
       run: |
         echo "JWT_SECRET=${{ secrets.JWT_SECRET }}" >> .env
         echo "DB_HOST=db" >> .env
+        echo "VAPID_PUBLIC=BLZ5Wvz_DHCfREAWZ-WAYlPYs-QoqMAjlmKhAEhGUwLeAPjX036PLAzeJiSCjPdet3G6fBqlYkUB-xwqCD08Zt0" >> .env
+        echo "VAPID_PRIVATE=6XpiEHaa0jI3oMcUK1AId59HD1yz8xztNXDDtQmBn0Q" >> .env
 
     - name: Build Docker image
       run: docker build -t min-backend .
