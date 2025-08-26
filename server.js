@@ -10,6 +10,7 @@ import path from 'path';
 import fs from 'fs';
 import multer from 'multer';
 import sharp from 'sharp';
+import webpush from 'web-push';
 dotenv.config();
 
 const origins = ["http://localhost:3000", "http://192.168.0.120:3000", "https://msg-min.xyz"];
@@ -29,6 +30,12 @@ app.use(cors({
 }))
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
+
+webpush.setVapidDetails(
+    `mailto:${process.env.EMAIL}`,
+    process.env.VAPID_PUBLIC,
+    process.env.VAPID_PRIVATE
+);
 
 // Creating folder for uploads and avatars
 const uploadsDir = "uploads";
@@ -59,7 +66,7 @@ CREATE TABLE IF NOT EXISTS chat_users (
     FOREIGN KEY (chat_id) REFERENCES chats(id) ON DELETE CASCADE,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
-CREATE TABLE messages (
+CREATE TABLE IF NOT EXISTS messages (
     id INT PRIMARY KEY AUTO_INCREMENT,
     chat_id INT NOT NULL,
     sender_id INT NOT NULL,
@@ -68,6 +75,13 @@ CREATE TABLE messages (
     FOREIGN KEY (chat_id) REFERENCES chats(id) ON DELETE CASCADE,
     FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE
 );
+CREATE TABLE IF NOT EXISTS subscriptions (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT NOT NULL,
+  subscription JSON NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 `, (error, res) => {
     initConnection.end();
 });
@@ -197,6 +211,67 @@ app.post('/verify', (req, res) => {
         return res.status(400).json({ valid: false, msg: 'Invalid token' });
     }
 })
+
+
+// Route for subscribing to web push
+app.post('/subscribe', (req, res) => {
+    const subscription = req.body.subscription;
+    const token = req.body.token;
+    if (!token) {
+        return res.status(400).json({ ok: false, msg: 'No token provided' });
+    }
+    try {
+        const decoded = jwt.verify(token, JWT_SECRET);
+        connection.query("INSERT INTO subscriptions (user_id, subscription) VALUES (?, ?)", 
+            [decoded.id, JSON.stringify(subscription)], (error, results) => {
+                if (error) {
+                    res.status(400).json({ ok: false, msg: 'MySQL error while saving subscription' });
+                }
+                res.json({ ok: true });
+            });
+    }
+    catch (err) {
+        return res.status(400).json({ ok: false, msg: 'Invalid data' });
+    }
+});
+
+// Route for sending push to someone (FOR TEST!)
+app.post("/send-to/:userId", (req, res) => {
+    const userId = req.params.userId;
+    const { title, message } = req.body;
+
+    connection.query(
+        "SELECT subscription FROM subscriptions WHERE user_id = ?",
+        [userId],
+        (err, rows) => {
+            if (err) {
+                console.error(err);
+                return res.status(500).json({ error: "DB error" });
+            }
+
+            const payload = JSON.stringify({ title, message });
+
+            let sentCount = 0;
+
+            // проходим по подпискам
+            rows.forEach(row => {
+                const subscription = JSON.parse(row.subscription);
+                webpush.sendNotification(subscription, payload)
+                .then(() => {
+                    sentCount++;
+                })
+                .catch(err => {
+                    console.error("Push failed for", subscription.endpoint, err);
+                    // можно удалить подписку из базы, если нужно
+                });
+            });
+
+            // Отправляем ответ сразу (пуши могут приходить чуть позже)
+            console.log(payload);
+            res.json({ ok: true, subscriptions: rows.length });
+        }
+    );
+});
 
 io.use((socket, next) => {
     const token = socket.handshake.auth.token;
