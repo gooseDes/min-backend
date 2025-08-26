@@ -257,6 +257,7 @@ app.post("/send-to/:userId", (req, res) => {
             rows.forEach(row => {
                 let subscription;
                 try {
+                    console.log(row);
                     subscription = JSON.parse(row.subscription);
                     webpush.sendNotification(subscription, payload)
                     .then(() => {
