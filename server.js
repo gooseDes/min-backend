@@ -237,6 +237,7 @@ app.post('/subscribe', (req, res) => {
 
 // Route for sending push to someone (FOR TEST!)
 app.post("/send-to/:userId", (req, res) => {
+    console.log("send-to called", req.params.userId, req.body);
     const userId = req.params.userId;
     const { title, message } = req.body;
 
@@ -253,7 +254,6 @@ app.post("/send-to/:userId", (req, res) => {
 
             let sentCount = 0;
 
-            // проходим по подпискам
             rows.forEach(row => {
                 const subscription = JSON.parse(row.subscription);
                 webpush.sendNotification(subscription, payload)
@@ -262,11 +262,9 @@ app.post("/send-to/:userId", (req, res) => {
                 })
                 .catch(err => {
                     console.error("Push failed for", subscription.endpoint, err);
-                    // можно удалить подписку из базы, если нужно
                 });
             });
 
-            // Отправляем ответ сразу (пуши могут приходить чуть позже)
             console.log(payload);
             res.json({ ok: true, subscriptions: rows.length });
         }
