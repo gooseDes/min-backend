@@ -316,6 +316,7 @@ io.on('connection', (socket) => {
             const to_send = {
                 id: results.insertId,
                 text: data.text,
+                author_id: socket.user.id,
                 author: socket.user.name,
                 chat: data.chat
             }
@@ -365,6 +366,7 @@ io.on('connection', (socket) => {
             messages.id,
             messages.content,
             messages.sent_at,
+            messages.sender_id,
             users.name AS sender_name
             FROM messages
             JOIN users ON messages.sender_id = users.id
@@ -379,6 +381,7 @@ io.on('connection', (socket) => {
             const messages = results.map(msg => ({
                 id: msg.id,
                 chat_id: msg.chat_id,
+                author_id: msg.sender_id,
                 author: msg.sender_name,
                 text: msg.content,
                 sent_at: msg.sent_at
