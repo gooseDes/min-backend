@@ -48,10 +48,10 @@ const upload = multer({ dest: "temp/", limits: { fileSize: 10 * 1024 * 1024 } })
 const JWT_SECRET = process.env.JWT_SECRET || 'defaultsecret';
 
 const initConnection = createConnection({
-  host: process.env.DB_HOST || 'localhost',
-  user: 'root',
-  password: 'root',
-  multipleStatements: true
+    host: process.env.DB_HOST || 'localhost',
+    user: 'root',
+    password: 'root',
+    multipleStatements: true
 });
 
 initConnection.query(`CREATE DATABASE IF NOT EXISTS min;
@@ -87,14 +87,14 @@ CREATE TABLE IF NOT EXISTS subscriptions (
 });
 
 const connection = createConnection({
-  host: process.env.DB_HOST || 'localhost',
-  user: 'root',
-  password: 'root',
-  database: 'min',
-  multipleStatements: false
+    host: process.env.DB_HOST || 'localhost',
+    user: 'root',
+    password: 'root',
+    database: 'min',
+    multipleStatements: false
 });
 
-// Some function lol :3
+// Something for verification
 function authMiddleware(req, res, next) {
     const authHeader = req.headers["authorization"];
     if (!authHeader) return res.status(401).json({ error: "No token" });
@@ -236,7 +236,7 @@ app.post('/subscribe', (req, res) => {
 });
 
 // Route for sending push to someone (FOR TEST!)
-app.post("/send-to/:userId", (req, res) => {
+/*app.post("/send-to/:userId", (req, res) => {
     const userId = req.params.userId;
     const { title, message } = req.body;
 
@@ -276,7 +276,7 @@ app.post("/send-to/:userId", (req, res) => {
             res.json({ ok: true, subscriptions: rows.length });
         }
     );
-});
+});*/
 
 io.use((socket, next) => {
     const token = socket.handshake.auth.token;
@@ -288,9 +288,15 @@ io.use((socket, next) => {
     try {
         const decoded = jwt.verify(token, JWT_SECRET);
         socket.user = decoded;
-        next();
+        connection.query('SELECT chat_id FROM chat_users WHERE user_id=?', [decoded.id], (error, results) => {
+            if (error) return next(new Error("Invalid token (╯°□°）╯︵ ┻━┻"));
+            results.forEach(chat => {
+                socket.join(`chat:${chat.chat_id}`);
+            });
+            next();
+        });
     } catch (err) {
-        next(new Error("Invalid token (╯°□°）╯︵ ┻━┻"));
+        return next(new Error("Invalid token (╯°□°）╯︵ ┻━┻"));
     }
 });
 
@@ -300,18 +306,20 @@ io.on('connection', (socket) => {
             socket.emit('error', { msg: 'Message is empty or some required arguments are missing' });
         }
 
-        // Sending to others with ws
-        const to_send = {
-            text: data.text,
-            author: socket.user.name
-        }
-        io.emit('message', to_send);
-
         // Saving to db
         connection.query('INSERT INTO messages (chat_id, sender_id, content) VALUES (?, ?, ?)', [data.chat, socket.user.id, data.text], (error, results) => {
             if (error) {
                 socket.emit('error', { msg: 'MySQL error happened while trying to save your message.' });
+                return;
             }
+            // Sending to everyone
+            const to_send = {
+                id: results.insertId,
+                text: data.text,
+                author: socket.user.name,
+                chat: data.chat
+            }
+            io.to(`chat:${data.chat}`).emit('message', to_send);
         });
 
         // Sending push messages
