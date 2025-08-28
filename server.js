@@ -41,6 +41,8 @@ webpush.setVapidDetails(
 // Creating folder for uploads and avatars
 const uploadsDir = "uploads";
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir);
+const imagesDir = "images";
+const defaultAvatar = path.join(imagesDir, "logo512.png");
 const avatarsDir = path.join(uploadsDir, "avatars");
 if (!fs.existsSync(avatarsDir)) fs.mkdirSync(avatarsDir);
 
@@ -144,7 +146,14 @@ app.post("/upload-avatar", authMiddleware, upload.single("avatar"), async (req, 
 
 
 // Hosting avatars
-app.use("/avatars", express.static(avatarsDir));
+app.get("/avatars/:id.webp", (req, res) => {
+    const filePath = path.join(avatarsDir, req.params.id + ".webp");
+    if (fs.existsSync(filePath)) {
+        res.sendFile(path.resolve(filePath));
+    } else {
+        res.sendFile(path.resolve(defaultAvatar));
+    }
+});
 
 // Signing up
 app.post('/register', async (req, res) => {
