@@ -328,27 +328,47 @@ io.on('connection', (socket) => {
             if (error) {return};
             results.forEach(row => {
                 connection.query("SELECT subscription FROM subscriptions WHERE user_id = ?", [row.user_id], (error, subscriptions) => {
-                    if (!error) {
-                        const payload = JSON.stringify({ title: `Chat ${data.chat}`, message: data.text });
-                        let sentCount = 0;
+                    if (!error && row.user_id != socket.user.id) {
+                        connection.query(`SELECT 
+                                        CASE 
+                                            WHEN chats.type = 'private' THEN (
+                                                SELECT u.name 
+                                                FROM chat_users cu
+                                                JOIN users u ON cu.user_id = u.id
+                                                WHERE cu.chat_id = chats.id AND cu.user_id != ?
+                                                LIMIT 1
+                                            )
+                                            ELSE chats.name
+                                        END AS name
+                                    FROM chats
+                                    WHERE chats.id IN (
+                                        SELECT chat_id FROM chat_users WHERE user_id = ? AND chat_id = ?
+                                    )`, 
+                        [row.user_id, row.user_id, data.chat],
+                        (error, results) => {
+                            if (!error && results.length > 0) {
+                                const payload = JSON.stringify({ title: results[0].name, message: data.text });
+                                let sentCount = 0;
 
-                        subscriptions.forEach(sub => {
-                            let subscription;
-                            try {
-                                if (typeof sub.subscription == 'string') {
-                                    subscription = JSON.parse(sub.subscription);
-                                } else {
-                                    subscription = sub.subscription;
-                                }
-                                webpush.sendNotification(subscription, payload)
-                                .then(() => {
-                                    sentCount++;
-                                })
-                                .catch(err => {
-                                    console.error("Push failed for", subscription.endpoint, err);
+                                subscriptions.forEach(sub => {
+                                    let subscription;
+                                    try {
+                                        if (typeof sub.subscription == 'string') {
+                                            subscription = JSON.parse(sub.subscription);
+                                        } else {
+                                            subscription = sub.subscription;
+                                        }
+                                        webpush.sendNotification(subscription, payload)
+                                        .then(() => {
+                                            sentCount++;
+                                        })
+                                        .catch(err => {
+                                            console.error("Push failed for", subscription.endpoint, err);
+                                        });
+                                    } catch (error) {
+                                        console.log(error);
+                                    }
                                 });
-                            } catch (error) {
-                                console.log(error);
                             }
                         });
                     }
