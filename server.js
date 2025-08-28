@@ -11,6 +11,7 @@ import fs from 'fs';
 import multer from 'multer';
 import sharp from 'sharp';
 import webpush from 'web-push';
+import { jsonToObject } from './utils.js';
 dotenv.config();
 
 const origins = ["http://localhost:3000", "http://192.168.0.120:3000", "https://msg-min.xyz"];
@@ -222,13 +223,25 @@ app.post('/subscribe', (req, res) => {
     }
     try {
         const decoded = jwt.verify(token, JWT_SECRET);
-        connection.query("INSERT INTO subscriptions (user_id, subscription) VALUES (?, ?)", 
+        connection.query("SELECT subscription FROM subscriptions WHERE user_id=?", [decoded.id], (error, results) => {
+            if (error) {
+                return res.status(400).json({ ok: false, msg: 'MySQL error while fetching user' });
+            }
+            let contin = true;
+            results.forEach(row => {
+                if (jsonToObject(row.subscription).endpoint == subscription.endpoint) {
+                    contin = false;
+                }
+            });
+            if (!contin) return res.status(400).json({ ok: false, msg: 'This device has already subscribed' });
+            connection.query("INSERT INTO subscriptions (user_id, subscription) VALUES (?, ?)", 
             [decoded.id, JSON.stringify(subscription)], (error, results) => {
                 if (error) {
-                    res.status(400).json({ ok: false, msg: 'MySQL error while saving subscription' });
+                    return res.status(400).json({ ok: false, msg: 'MySQL error while saving subscription' });
                 }
-                res.json({ ok: true });
+                return res.json({ ok: true });
             });
+        });
     }
     catch (err) {
         return res.status(400).json({ ok: false, msg: 'Invalid data' });
@@ -327,7 +340,7 @@ io.on('connection', (socket) => {
         connection.query("SELECT user_id FROM chat_users WHERE chat_id=?", [data.chat], (error, results) => {
             if (error) {return};
             results.forEach(row => {
-                connection.query("SELECT subscription FROM subscriptions WHERE user_id = ?", [row.user_id], (error, subscriptions) => {
+                connection.query("SELECT id, subscription FROM subscriptions WHERE user_id = ?", [row.user_id], (error, subscriptions) => {
                     if (!error && row.user_id != socket.user.id) {
                         connection.query(`SELECT 
                                         CASE 
@@ -347,7 +360,7 @@ io.on('connection', (socket) => {
                         [row.user_id, row.user_id, data.chat],
                         (error, results) => {
                             if (!error && results.length > 0) {
-                                const payload = JSON.stringify({ title: results[0].name, message: data.text });
+                                const payload = JSON.stringify({ chat: results[0].name, author: socket.user.id, message: data.text });
                                 let sentCount = 0;
 
                                 subscriptions.forEach(sub => {
@@ -364,6 +377,7 @@ io.on('connection', (socket) => {
                                         })
                                         .catch(err => {
                                             console.error("Push failed for", subscription.endpoint, err);
+                                            connection.query('DELETE FROM subscriptions WHERE id=?', (sub.id));
                                         });
                                     } catch (error) {
                                         console.log(error);
