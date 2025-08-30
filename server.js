@@ -560,6 +560,35 @@ io.on('connection', (socket) => {
             socket.emit('userInfo', { user: results[0] });
         });
     });
+
+    socket.on('getChatWith', data => {
+        if (!data || (!data.id && !data.name)) {
+            socket.emit('error', { msg: 'No data provided' });
+            return;
+        }
+        connection.query('SELECT id FROM users WHERE id = ? OR name = ?', [data.id || 0, data.name || ''], (error, results) => {
+            if (error) {
+                socket.emit('error', { msg: 'MySQL error while fetching user' });
+                return;
+            }
+            data.id = results[0].id;
+            const chatUsers = [socket.user.id, data.id];
+            const chatName = chatUsers.sort().join('-');
+            connection.query('SELECT id FROM chats WHERE name=?', [chatName], (error, results) => {
+                if (error) {
+                    socket.emit('error', { msg: 'MySQL error while fetching chats' });
+                    return;
+                }
+                if (results.length > 0) {
+                    socket.emit('getChatWithResult', { 'chatId': results[0].id });
+                    return;
+                } else {
+                    socket.emit('getChatWithResult', { 'chatId': -1 });
+                    return;
+                }
+            });
+        });
+    });
 });
 
 setInterval(() => {
