@@ -437,7 +437,6 @@ io.on('connection', (socket) => {
             ORDER BY sub.sent_at ASC;
             `, 
             [data.chat]);
-            logger.info(`${formatUser(socket.user)} requested chat history for chat ${data.chat}:\n${history.map(msg => `${msg.sender_name} (${msg.sender_id}): ${msg.content} at ${msg.sent_at}`).join('\n')}\n(${history.length})`);
             const messages = history.map(msg => ({
                 id: msg.id,
                 chat_id: msg.chat_id,
