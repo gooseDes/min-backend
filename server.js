@@ -420,18 +420,22 @@ io.on('connection', (socket) => {
                 socket.emit('error', { msg: 'Chat ID is required to get chat history' });
                 return;
             }
-            const [history] = await connection.query(`SELECT
-                messages.id,
-                messages.chat_id,
-                messages.content,
-                messages.sent_at,
-                messages.sender_id,
-                users.name AS sender_name
-                FROM messages
-                JOIN users ON messages.sender_id = users.id
-                WHERE messages.chat_id = ?
-                ORDER BY messages.sent_at ASC
-                LIMIT 100 OFFSET 0;`, 
+            const [history] = await connection.query(`SELECT * FROM (
+                            SELECT
+                                messages.id,
+                                messages.chat_id,
+                                messages.content,
+                                messages.sent_at,
+                                messages.sender_id,
+                                users.name AS sender_name
+                            FROM messages
+                            JOIN users ON messages.sender_id = users.id
+                            WHERE messages.chat_id = ?
+                            ORDER BY messages.sent_at DESC
+                            LIMIT 100
+                        ) AS sub
+                        ORDER BY sub.sent_at ASC;
+            `, 
             [data.chat]);
             logger.info(`${formatUser(socket.user)} requested chat history for chat ${data.chat}:\n${history.map(msg => `${msg.sender_name} (${msg.sender_id}): ${msg.content} at ${msg.sent_at}`).join('\n')}\n(${history.length})`);
             const messages = history.map(msg => ({
