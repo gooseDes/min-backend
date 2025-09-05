@@ -72,9 +72,12 @@ webpush.setVapidDetails(
 const uploadsDir = "uploads";
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir);
 const imagesDir = "images";
-const defaultAvatar = path.join(imagesDir, "logo512.png");
+const defaultAvatar = path.join(imagesDir, "logo.webp");
+const defaultAttachment = path.join(imagesDir, "no_image.webp");
 const avatarsDir = path.join(uploadsDir, "avatars");
 if (!fs.existsSync(avatarsDir)) fs.mkdirSync(avatarsDir);
+const attachmentsDir = path.join(uploadsDir, "attachments");
+if (!fs.existsSync(attachmentsDir)) fs.mkdirSync(attachmentsDir);
 
 const upload = multer({ dest: "temp/", limits: { fileSize: 10 * 1024 * 1024 } });
 
@@ -139,6 +142,7 @@ function authMiddleware(req, res, next) {
     try {
         const decoded = jwt.verify(token, JWT_SECRET);
         req.userId = decoded.id;
+        req.userName = decoded.name;
         next();
     } catch (err) {
         return res.status(403).json({ error: "Invalid Token" });
@@ -147,33 +151,26 @@ function authMiddleware(req, res, next) {
 
 // Route for loading avatars
 app.post("/upload-avatar", authMiddleware, upload.single("avatar"), async (req, res) => {
-  try {
-    if (!req.file) return res.status(400).json({ error: "File is not loaded" });
+    try {
+        if (!req.file) return res.status(400).json({ success: false, msg: "File is not loaded" });
 
-    const userId = req.userId;
-    const outPath = path.join(avatarsDir, `${userId}.webp`);
+        const userId = req.userId;
+        const outPath = path.join(avatarsDir, `${userId}.webp`);
 
-    // Converting and resizing image
-    await sharp(req.file.path)
-      .resize(512, 512, { fit: "cover" })
-      .toFormat("webp", { quality: 80 })
-      .toFile(outPath);
+        // Converting and resizing image
+        await sharp(req.file.path)
+        .resize(512, 512, { fit: "cover" })
+        .toFormat("webp", { quality: 80 })
+        .toFile(outPath);
 
-    fs.unlinkSync(req.file.path);
+        fs.unlinkSync(req.file.path);
 
-    fs.readdir('temp', (err, files) => {
-        files.forEach(file => {
-            const filePath = path.join(directoryPath, file);
-            fs.unlinkSync(filePath)
-        });
-    });
-
-    res.json({ url: `/avatars/${userId}.webp` });
-    logger.info(`User ${userId} uploaded their avatar`);
-  } catch (err) {
-    logger.error(`Error loading avatar for user ${userId || 'Unknown'}`)
-    res.status(500).json({ error: "Error loading" });
-  }
+        res.json({ success: true, url: `/avatars/${userId}.webp` });
+        logger.info(`${formatUser({ id: userId, name: req.userName })} uploaded their avatar`);
+    } catch (err) {
+        logger.error(`Error loading avatar for user ${formatUser({ id: userId, name: req.userName })}:\n${err}`)
+        res.status(500).json({ success: false, msg: "Error loading" });
+    }
 });
 
 
@@ -184,6 +181,37 @@ app.get("/avatars/:id.webp", (req, res) => {
         res.sendFile(path.resolve(filePath));
     } else {
         res.sendFile(path.resolve(defaultAvatar));
+    }
+});
+
+// Route for loading attachments
+app.post("/attach", authMiddleware, upload.array("attachments", 5), async (req, res) => {
+    try {
+        if (!req.files || req.files.length === 0) return res.status(400).json({ success: false, msg: "Files are not loaded" });
+        const userId = req.userId;
+        const urls = [];
+        for (let file of req.files) {
+            const ext = path.extname(file.originalname);
+            const newFilename = `${Date.now()}-${Math.round(Math.random() * 1E9)}${ext}`;
+            const outPath = path.join(attachmentsDir, newFilename);
+            fs.renameSync(file.path, outPath);
+            urls.push(`/attachments/${newFilename}`);
+            logger.info(`${formatUser({ id: userId, name: req.userName })} uploaded attachment ${newFilename}`);
+        }
+        res.json({ success: true, urls: urls });
+    } catch (err) {
+        logger.error(`Error loading attachments for ${formatUser({ id: userId, name: req.userName })}:\n${err}`)
+        res.status(500).json({ success: false, msg: "Error loading" });
+    }
+});
+
+// Hosting attachments
+app.get("/attachments/:filename", (req, res) => {
+    const filePath = path.join(attachmentsDir, req.params.filename);
+    if (fs.existsSync(filePath)) {
+        res.sendFile(path.resolve(filePath));
+    } else {
+        res.sendFile(path.resolve(defaultAttachment));
     }
 });
 
