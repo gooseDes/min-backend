@@ -421,20 +421,20 @@ io.on('connection', (socket) => {
                 return;
             }
             const [history] = await connection.query(`SELECT * FROM (
-                            SELECT
-                                messages.id,
-                                messages.chat_id,
-                                messages.content,
-                                messages.sent_at,
-                                messages.sender_id,
-                                users.name AS sender_name
-                            FROM messages
-                            JOIN users ON messages.sender_id = users.id
-                            WHERE messages.chat_id = ?
-                            ORDER BY messages.sent_at DESC
-                            LIMIT 100
-                        ) AS sub
-                        ORDER BY sub.sent_at ASC;
+                SELECT
+                    messages.id,
+                    messages.chat_id,
+                    messages.content,
+                    messages.sent_at,
+                    messages.sender_id,
+                    users.name AS sender_name
+                FROM messages
+                JOIN users ON messages.sender_id = users.id
+                WHERE messages.chat_id = ?
+                ORDER BY messages.sent_at DESC
+                LIMIT 100
+            ) AS sub
+            ORDER BY sub.sent_at ASC;
             `, 
             [data.chat]);
             logger.info(`${formatUser(socket.user)} requested chat history for chat ${data.chat}:\n${history.map(msg => `${msg.sender_name} (${msg.sender_id}): ${msg.content} at ${msg.sent_at}`).join('\n')}\n(${history.length})`);
