@@ -200,7 +200,7 @@ app.post("/attach", authMiddleware, upload.array("attachments", 5), async (req, 
         }
         res.json({ success: true, urls: urls });
     } catch (err) {
-        logger.error(`Error loading attachments for ${formatUser({ id: userId, name: req.userName })}:\n${err}`)
+        logger.error(`Error loading attachments for ${formatUser({ id: req.userId, name: req.userName })}:\n${err}`)
         res.status(500).json({ success: false, msg: "Error loading" });
     }
 });
