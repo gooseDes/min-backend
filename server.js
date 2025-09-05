@@ -79,7 +79,7 @@ if (!fs.existsSync(avatarsDir)) fs.mkdirSync(avatarsDir);
 const attachmentsDir = path.join(uploadsDir, "attachments");
 if (!fs.existsSync(attachmentsDir)) fs.mkdirSync(attachmentsDir);
 
-const upload = multer({ dest: "temp/", limits: { fileSize: 10 * 1024 * 1024 } });
+const upload = multer({ dest: path.join(uploadsDir, "temp"), limits: { fileSize: 10 * 1024 * 1024 } });
 
 const JWT_SECRET = process.env.JWT_SECRET || 'defaultsecret';
 
