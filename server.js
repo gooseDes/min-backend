@@ -422,6 +422,7 @@ io.on('connection', (socket) => {
             }
             const [history] = await connection.query(`SELECT
                 messages.id,
+                messages.chat_id,
                 messages.content,
                 messages.sent_at,
                 messages.sender_id,
