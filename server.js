@@ -478,7 +478,7 @@ io.on('connection', (socket) => {
                 socket.emit('createChatResult', { success: false, msg: 'Chat already exists' });
                 return;
             }
-            const [inserted_chat] = connection.query('INSERT INTO chats (type, name) VALUES (?, ?)', ['private', chatName]);
+            const [inserted_chat] = await connection.query('INSERT INTO chats (type, name) VALUES (?, ?)', ['private', chatName]);
             for (let id of chatUsers) {
                 await connection.query('INSERT INTO chat_users (chat_id, user_id) VALUES (?, ?)', [inserted_chat.insertId, id]);
             }
