@@ -11,7 +11,7 @@ import fs from 'fs';
 import multer from 'multer';
 import sharp from 'sharp';
 import webpush from 'web-push';
-import { formatUser, jsonToObject, objectToJson } from './utils.js';
+import { formatUser, jsonToObject, objectToJson, validateString } from './utils.js';
 import pino from 'pino';
 dotenv.config();
 
@@ -72,12 +72,17 @@ webpush.setVapidDetails(
 const uploadsDir = "uploads";
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir);
 const imagesDir = "images";
-const defaultAvatar = path.join(imagesDir, "logo.webp");
-const defaultAttachment = path.join(imagesDir, "no_image.webp");
 const avatarsDir = path.join(uploadsDir, "avatars");
 if (!fs.existsSync(avatarsDir)) fs.mkdirSync(avatarsDir);
 const attachmentsDir = path.join(uploadsDir, "attachments");
 if (!fs.existsSync(attachmentsDir)) fs.mkdirSync(attachmentsDir);
+const emojisDir = path.join(uploadsDir, "emojis");
+if (!fs.existsSync(emojisDir)) fs.mkdirSync(emojisDir);
+
+// Setting up fallbacks
+const defaultAvatar = path.join(imagesDir, "logo.webp");
+const defaultAttachment = path.join(imagesDir, "no_image.webp");
+const defaultEmoji = path.join(imagesDir, "no_image.webp");
 
 const upload = multer({ dest: path.join(uploadsDir, "temp"), limits: { fileSize: 10 * 1024 * 1024 } });
 
@@ -118,7 +123,12 @@ CREATE TABLE IF NOT EXISTS subscriptions (
   subscription JSON NOT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-
+CREATE TABLE IF NOT EXISTS emojis (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    name VARCHAR(64) NOT NULL,
+    uploader_id INT NOT NULL,
+    FOREIGN KEY (uploader_id) REFERENCES users(id) ON DELETE CASCADE
+);
 `);
 await initConnection.end();
 
@@ -168,7 +178,7 @@ app.post("/upload-avatar", authMiddleware, upload.single("avatar"), async (req, 
         res.json({ success: true, url: `/avatars/${userId}.webp` });
         logger.info(`${formatUser({ id: userId, name: req.userName })} uploaded their avatar`);
     } catch (err) {
-        logger.error(`Error loading avatar for user ${formatUser({ id: userId, name: req.userName })}:\n${err}`)
+        logger.error(`Error loading avatar for user ${formatUser({ id: req.userId, name: req.userName })}:\n${err}`)
         res.status(500).json({ success: false, msg: "Error loading" });
     }
 });
@@ -215,6 +225,42 @@ app.get("/attachments/:filename", (req, res) => {
     }
 });
 
+// Route for uploading custom emojis
+app.post('/upload-emoji', authMiddleware, upload.single("emoji"), async (req, res) => {
+    try {
+        if (!req.file) return res.status(400).json({ success: false, msg: "File is not loaded" });
+        const { name } = req.body;
+        if (!validateString(name, "username", 1, 32)) return res.status(400).json({ success: false, msg: "Invalid emoji name" });
+
+        const [insertedEmoji] = await connection.query('INSERT INTO emojis (name, uploader_id) VALUES (?, ?)', [name, req.userId]);
+        const outPath = path.join(emojisDir, `${insertedEmoji.insertId}.webp`);
+
+        // Converting and resizing image
+        await sharp(req.file.path)
+        .resize(64, 64, { fit: "cover" })
+        .toFormat("webp", { quality: 80 })
+        .toFile(outPath);
+
+        fs.unlinkSync(req.file.path);
+
+        res.json({ success: true, url: `/emojis/${insertedEmoji.insertId}.webp` });
+        logger.info(`${formatUser({ id: req.userId, name: req.userName })} uploaded their custom emoji`);
+    } catch (err) {
+        logger.error(`Error loading custom emoji by user ${formatUser({ id: req.userId, name: req.userName })}:\n${err}`)
+        res.status(500).json({ success: false, msg: "Error loading" });
+    }
+});
+
+// Hosting custom emojis
+app.get("/emojis/:id.webp", (req, res) => {
+    const filePath = path.join(emojisDir, req.params.id + ".webp");
+    if (fs.existsSync(filePath)) {
+        res.sendFile(path.resolve(filePath));
+    } else {
+        res.sendFile(path.resolve(defaultEmoji));
+    }
+});
+
 // Signing up
 app.post('/register', async (req, res) => {
     try {
@@ -240,7 +286,7 @@ app.post('/register', async (req, res) => {
     }
 });
 
-// Singing in
+// Signing in
 app.post('/login', async (req, res) => {
     try {
         const { email, password } = req.body;
@@ -563,6 +609,16 @@ io.on('connection', (socket) => {
         } else {
             socket.emit('getChatWithResult', { 'chatId': -1 });
             return;
+        }
+    });
+
+    socket.on('getCustomEmojis', async data => {
+        try {
+            const [emojis] = await connection.query('SELECT * FROM emojis WHERE uploader_id = ?', [socket.user.id]);
+            socket.emit('customEmojis', { emojis: emojis });
+        } catch (error) {
+            socket.emit('error', { msg: 'Unexpected error while getting custom emojis' });
+            logger.error(`Unexpected error happend while getting custom emojis by ${formatUser(socket.user)}:\n${error}`);
         }
     });
 });
