@@ -15,6 +15,9 @@ import { formatUser, jsonToObject, objectToJson, validateString } from './utils.
 import pino from 'pino';
 dotenv.config();
 
+const EMOJI_SIZE = 96;
+const AVATAR_SIZE = 512;
+
 const logsDir = 'logs';
 if (!fs.existsSync(logsDir)) fs.mkdirSync(logsDir);
 
@@ -169,7 +172,7 @@ app.post("/upload-avatar", authMiddleware, upload.single("avatar"), async (req, 
 
         // Converting and resizing image
         await sharp(req.file.path)
-        .resize(512, 512, { fit: "cover" })
+        .resize(AVATAR_SIZE, AVATAR_SIZE, { fit: "cover" })
         .toFormat("webp", { quality: 80 })
         .toFile(outPath);
 
@@ -237,7 +240,7 @@ app.post('/upload-emoji', authMiddleware, upload.single("emoji"), async (req, re
 
         // Converting and resizing image
         await sharp(req.file.path)
-        .resize(64, 64, { fit: "cover" })
+        .resize(EMOJI_SIZE, EMOJI_SIZE, { fit: "cover" })
         .toFormat("webp", { quality: 80 })
         .toFile(outPath);
 
@@ -265,12 +268,12 @@ app.get("/emojis/:id.webp", (req, res) => {
 app.post('/register', async (req, res) => {
     try {
         const { email, username, password } = req.body;
+        if (!validateString(email, 'email', 1, 256)) return res.status(400).json({ msg: 'Please enter valid email' });
+        if (!validateString(username, 'username', 1, 64)) return res.status(400).json({ msg: 'Username must be 1-64 characters and must consist of a-z A-Z 0-9 _ -' });
+        if (!validateString(password, 'password', 6, 64)) return res.status(400).json({ msg: 'Password must be 6-64 characters long and not contain any prohibited characters' });
         const [results] = await connection.query('SELECT * FROM users WHERE name = ? OR email = ?', [username, email]);
         if (results.length > 0) {
             return res.status(400).json({ msg: 'User with such username or email exists' })
-        }
-        if (password.length < 6) {
-            return res.status(400).json({ msg: 'Password must be at least 6 characters long!' });
         }
         bcrypt.hash(password, 10, async (error, hash) => {
             if (error) {
@@ -278,6 +281,7 @@ app.post('/register', async (req, res) => {
             }
             const [inserted] = await connection.query('INSERT INTO users (name, email, password) VALUES (?, ?, ?)', [username, email, hash]);
             const token = jwt.sign({ id: inserted.insertId, name: username, email: email }, JWT_SECRET, { expiresIn: '7d' });
+            logger.info(`${formatUser({ id: inserted.insertId, name: username })} just created an account!`);
             return res.json({ id: inserted.insertId, token: token });
         });
     } catch (err) {
