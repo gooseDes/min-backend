@@ -398,6 +398,7 @@ io.on('connection', (socket) => {
 
             // Saving to db
             const [inserted] = await connection.query('INSERT INTO messages (chat_id, sender_id, content) VALUES (?, ?, ?)', [data.chat, socket.user.id, data.text]);
+            const [inserted_data] = await connection.query('SELECT id, UNIX_TIMESTAMP(sent_at) AS sent_at FROM messages WHERE id=?', [inserted.insertId]);
 
             // Sending to everyone
             const to_send = {
@@ -405,7 +406,8 @@ io.on('connection', (socket) => {
                 text: data.text,
                 author_id: socket.user.id,
                 author: socket.user.name,
-                chat: data.chat
+                chat: data.chat,
+                sent_at: inserted_data[0].sent_at
             }
             io.to(`chat:${data.chat}`).emit('message', to_send);
 
@@ -475,7 +477,7 @@ io.on('connection', (socket) => {
                     messages.id,
                     messages.chat_id,
                     messages.content,
-                    messages.sent_at,
+                    UNIX_TIMESTAMP(messages.sent_at) AS sent_at,
                     messages.sender_id,
                     users.name AS sender_name
                 FROM messages
@@ -497,7 +499,8 @@ io.on('connection', (socket) => {
             }));
             socket.emit('history', { chat: data.chat, messages: messages });
         } catch (err) {
-            socket.emit('error', { msg: 'Unexpected error while sending chat history' });
+            logger.error(`Unexpected error happend while sending chat history to ${formatUser(socket.user)}:\n${err}`);
+            socket.emit('error', { msg: 'Unexpected error happend while sending chat history' });
         }
     });
 
