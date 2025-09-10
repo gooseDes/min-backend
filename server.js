@@ -686,6 +686,16 @@ io.on('connection', (socket) => {
             logger.error(`Unexpected error happend while getting custom emojis by ${formatUser(socket.user)}:\n${error}`);
         }
     });
+
+    socket.on('seenAll', async data => {
+        try {
+            await connection.query('UPDATE messages SET seen=1, seen_at=CURRENT_TIMESTAMP WHERE chat_id=? AND sender_id!=?', [data.chat, socket.user.id]);
+            io.to(`chat:${data.chat}`).emit('seenAll', { chat: data.chat });
+        } catch (error) {
+            socket.emit('error', { msg: 'Unexpected error happend while marking messages as seen' });
+            logger.error(`Unexpected error happend while marking messages as seen by ${formatUser(socket.user)}:\n${error}`);
+        }
+    });
 });
 
 // Pinging MySQL connection every minute

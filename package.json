@@ -5,7 +5,8 @@
   "main": "server.js",
   "scripts": {
     "db": "node show_tables.js",
-    "start": "node --import tsx server.js"
+    "start": "npx tsx server.js",
+    "dev": "npx tsx watch server.js"
   },
   "repository": {
     "type": "git",
