@@ -11,7 +11,8 @@ import fs from 'fs';
 import multer from 'multer';
 import sharp from 'sharp';
 import webpush from 'web-push';
-import { formatUser, jsonToObject, objectToJson, validateString } from './utils.js';
+import { formatUser, jsonToObject, objectToJson, validateString } from './lib/utils.ts';
+import { Database } from './lib/db.ts';
 import pino from 'pino';
 dotenv.config();
 
@@ -92,7 +93,7 @@ const upload = multer({ dest: path.join(uploadsDir, "temp"), limits: { fileSize:
 const JWT_SECRET = process.env.JWT_SECRET || 'defaultsecret';
 
 // Creating base and its structure
-const initConnection = await createConnection({
+/*const initConnection = await createConnection({
     host: process.env.DB_HOST || 'localhost',
     user: 'root',
     password: 'root',
@@ -133,7 +134,62 @@ CREATE TABLE IF NOT EXISTS emojis (
     FOREIGN KEY (uploader_id) REFERENCES users(id) ON DELETE CASCADE
 );
 `);
-await initConnection.end();
+await initConnection.end();*/
+
+// Creating database structure
+
+// Initializing database
+const db = new Database();
+await db.init('min');
+
+// Users Table
+const usersTable = await db.createTable('users');
+await usersTable.addColumn('name', 'VARCHAR(64)');
+await usersTable.addColumn('email', 'VARCHAR(64)');
+await usersTable.addColumn('password', 'VARCHAR(64)');
+
+// Chats Table
+const chatsTable = await db.createTable('chats');
+await chatsTable.addColumn('type', "ENUM('private', 'group') DEFAULT 'group'");
+await chatsTable.addColumn('name', 'VARCHAR(64)');
+
+// Creating default chat
+await db.executeCommand("INSERT IGNORE INTO chats (id, type, name) VALUES (1, 'group', 'Default Chat')");
+
+// Table for connection between chats and users
+const chatUsersTable = await db.createTable('chat_users', false);
+await chatUsersTable.addColumn('chat_id', 'INT');
+await chatUsersTable.addColumn('user_id', 'INT');
+await chatUsersTable.addConstraint('pk_chat_users', 'PRIMARY KEY (chat_id, user_id)');
+await chatUsersTable.addConstraint('fk_chat_id', 'FOREIGN KEY (chat_id) REFERENCES chats(id) ON DELETE CASCADE');
+await chatUsersTable.addConstraint('fk_user_id', 'FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE');
+
+// Messages table
+const messagesTable = await db.createTable('messages');
+await messagesTable.addColumn('chat_id', 'INT NOT NULL');
+await messagesTable.addColumn('sender_id', 'INT NOT NULL');
+await messagesTable.addColumn('content', 'TEXT NOT NULL');
+await messagesTable.addColumn('sent_at', 'DATETIME DEFAULT CURRENT_TIMESTAMP');
+await messagesTable.addColumn('seen', 'BOOLEAN DEFAULT 0');
+await messagesTable.addColumn('seen_at', 'DATETIME');
+await messagesTable.addConstraint('fk_chat_id', 'FOREIGN KEY (chat_id) REFERENCES chats(id) ON DELETE CASCADE');
+await messagesTable.addConstraint('fk_sender_id', 'FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE');
+
+// Subscriptions table
+const subscriptionsTable = await db.createTable('subscriptions');
+await subscriptionsTable.addColumn('user_id', 'INT NOT NULL');
+await subscriptionsTable.addColumn('subscription', 'JSON NOT NULL');
+await subscriptionsTable.addColumn('created_at', 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP');
+
+// Emojis table
+const emojisTable = await db.createTable('emojis');
+await emojisTable.addColumn('name', 'VARCHAR(64) NOT NULL');
+await emojisTable.addColumn('uploader_id', 'INT NOT NULL');
+await emojisTable.addConstraint('fk_uploader_id', 'FOREIGN KEY (uploader_id) REFERENCES users(id) ON DELETE CASCADE');
+
+await db.end();
+
+// Starting server
 
 // Creating connection with database
 const connection = await createConnection({
@@ -479,6 +535,7 @@ io.on('connection', (socket) => {
                     messages.content,
                     UNIX_TIMESTAMP(messages.sent_at) AS sent_at,
                     messages.sender_id,
+                    messages.seen,
                     users.name AS sender_name
                 FROM messages
                 JOIN users ON messages.sender_id = users.id
@@ -495,7 +552,8 @@ io.on('connection', (socket) => {
                 author_id: msg.sender_id,
                 author: msg.sender_name,
                 text: msg.content,
-                sent_at: msg.sent_at
+                sent_at: msg.sent_at,
+                seen: msg.seen
             }));
             socket.emit('history', { chat: data.chat, messages: messages });
         } catch (err) {
