@@ -541,11 +541,12 @@ io.on('connection', (socket) => {
                 JOIN users ON messages.sender_id = users.id
                 WHERE messages.chat_id = ?
                 ORDER BY messages.sent_at DESC
-                LIMIT 100
+                LIMIT 100 OFFSET ?
             ) AS sub
             ORDER BY sub.sent_at ASC;
             `, 
-            [data.chat]);
+            [data.chat, data.currentMessages || 0]);
+            const maxId = Math.max(...history.map(hist => hist.id))
             const messages = history.map(msg => ({
                 id: msg.id,
                 chat_id: msg.chat_id,
@@ -555,7 +556,7 @@ io.on('connection', (socket) => {
                 sent_at: msg.sent_at,
                 seen: msg.seen
             }));
-            socket.emit('history', { chat: data.chat, messages: messages });
+            socket.emit('history', { chat: data.chat, messages: messages, lastIndex: maxId });
         } catch (err) {
             logger.error(`Unexpected error happend while sending chat history to ${formatUser(socket.user)}:\n${err}`);
             socket.emit('error', { msg: 'Unexpected error happend while sending chat history' });
