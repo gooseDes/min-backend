@@ -643,11 +643,31 @@ io.on("connection", (socket) => {
 
     socket.on("seenAll", async (data) => {
         try {
+            if (!data || !data.chat) {
+                socket.emit("error", { msg: "Chat ID is required" });
+                return;
+            }
             await connection.query("UPDATE messages SET seen=1, seen_at=CURRENT_TIMESTAMP WHERE chat_id=? AND sender_id!=?", [data.chat, socket.user.id]);
             io.to(`chat:${data.chat}`).emit("seenAll", { chat: data.chat });
         } catch (error) {
             socket.emit("error", { msg: "Unexpected error happend while marking messages as seen" });
             logger.error(`Unexpected error happend while marking messages as seen by ${formatUser(socket.user)}:\n${error}`);
+        }
+    });
+
+    // Command for deleting messages
+    socket.on("deleteMessage", async (data) => {
+        try {
+            if (!data || !data.message) return socket.emit("error", { msg: "Message ID is required" });
+
+            const [messagesToDelete] = await connection.query("SELECT * FROM messages WHERE id=?", [data.message]);
+            if (messagesToDelete.length <= 0) return socket.emit("error", { msg: "No such message" });
+            const messageToDelete = messagesToDelete[0];
+            await connection.query("DELETE FROM messages WHERE id=?", [messageToDelete.id]);
+            io.to(`chat:${messageToDelete.chat_id}`).emit("deleteMessage", { message: messageToDelete.id });
+        } catch (error) {
+            socket.emit("error", { msg: "Unexpected error happend while deleting message" });
+            logger.error(`Unexpected error happend while deleting message with id ${data.message || "Unknown"} by ${formatUser(socket.user)}:\n${error}`);
         }
     });
 });
@@ -657,7 +677,8 @@ setInterval(() => {
     connection.ping();
 }, 60000);
 
+// Starting server
 const PORT = process.env.PORT || 5000;
 server.listen({ port: PORT, hostname: "0.0.0.0" }, () => {
-    logger.info(`Server is successfully started and is running on ${PORT} port!`);
+    logger.info(`Server is successfully started and runs on ${PORT} port!`);
 });
