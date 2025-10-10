@@ -416,20 +416,20 @@ io.on("connection", (socket) => {
                 if (row.user_id != socket.user.id) {
                     const [results] = await connection.query(
                         `SELECT 
-                                        CASE 
-                                            WHEN chats.type = 'private' THEN (
-                                                SELECT u.name 
-                                                FROM chat_users cu
-                                                JOIN users u ON cu.user_id = u.id
-                                                WHERE cu.chat_id = chats.id AND cu.user_id != ?
-                                                LIMIT 1
-                                            )
-                                            ELSE chats.name
-                                        END AS name
-                                    FROM chats
-                                    WHERE chats.id IN (
-                                        SELECT chat_id FROM chat_users WHERE user_id = ? AND chat_id = ?
-                                    )`,
+                            CASE 
+                                WHEN chats.type = 'private' THEN (
+                                    SELECT u.name 
+                                    FROM chat_users cu
+                                    JOIN users u ON cu.user_id = u.id
+                                    WHERE cu.chat_id = chats.id AND cu.user_id != ?
+                                    LIMIT 1
+                                )
+                                ELSE chats.name
+                            END AS name
+                        FROM chats
+                        WHERE chats.id IN (
+                            SELECT chat_id FROM chat_users WHERE user_id = ? AND chat_id = ?
+                        )`,
                         [row.user_id, row.user_id, data.chat]
                     );
                     if (results.length > 0) {
@@ -669,6 +669,21 @@ io.on("connection", (socket) => {
             socket.emit("error", { msg: "Unexpected error happend while deleting message" });
             logger.error(`Unexpected error happend while deleting message with id ${data.message || "Unknown"} by ${formatUser(socket.user)}:\n${error}`);
         }
+    });
+
+    // For voice chat
+    socket.on("joinVoice", (data) => {
+        if (!data || !data.chat) {
+            socket.emit("error", { msg: "Chat ID is required" });
+            return;
+        }
+        socket.join(`voice:${data.chat}`);
+        socket.emit("joinedVoice", { role: (io.sockets.adapter.rooms.get(`voice:${data.chat}`)?.size || 0) >= 1 ? "answer" : "offer" });
+        socket.to(`voice:${data.chat}`).emit("userJoined", { user: socket.user });
+    });
+
+    socket.on("voiceAction", (data) => {
+        socket.to(`voice:${data.chat}`).emit("voiceAction", data);
     });
 });
 
