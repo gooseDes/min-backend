@@ -678,7 +678,7 @@ io.on("connection", (socket) => {
             return;
         }
         socket.join(`voice:${data.chat}`);
-        socket.emit("joinedVoice", { role: (io.sockets.adapter.rooms.get(`voice:${data.chat}`)?.size || 0) >= 1 ? "answer" : "offer" });
+        socket.emit("joinedVoice", { role: (io.sockets.adapter.rooms.get(`voice:${data.chat}`)?.size || 0) >= 2 ? "answer" : "offer" });
         socket.to(`voice:${data.chat}`).emit("userJoined", { user: socket.user });
     });
 
