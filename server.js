@@ -14,7 +14,8 @@ import webpush from "web-push";
 import { formatUser, jsonToObject, objectToJson, validateString } from "./lib/utils.ts";
 import { Database } from "./lib/db.ts";
 import pino from "pino";
-dotenv.config();
+import { Turn } from "./lib/turn.ts";
+dotenv.config({ quiet: true });
 
 const EMOJI_SIZE = 96;
 const AVATAR_SIZE = 512;
@@ -139,9 +140,15 @@ await emojisTable.addColumn("name", "VARCHAR(64) NOT NULL");
 await emojisTable.addColumn("uploader_id", "INT NOT NULL");
 await emojisTable.addConstraint("fk_uploader_id", "FOREIGN KEY (uploader_id) REFERENCES users(id) ON DELETE CASCADE");
 
-await db.end();
+// Table for tracking turn api keys
+const turnKeysTable = await db.createTable("turn_keys");
+await turnKeysTable.addColumn("api_key", "VARCHAR(128) NOT NULL");
+await turnKeysTable.addColumn("created_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP");
+await turnKeysTable.addColumn("available_for", "INT DEFAULT 14400"); // In seconds
+await turnKeysTable.addColumn("chat_id", "INT NOT NULL");
+await turnKeysTable.addConstraint("fk_chat_id", "FOREIGN KEY (chat_id) REFERENCES chats(id) ON DELETE CASCADE");
 
-// Starting server
+await db.end();
 
 // Creating connection with database
 const connection = await createConnection({
@@ -151,6 +158,9 @@ const connection = await createConnection({
     database: "min",
     multipleStatements: false,
 });
+
+// Initializing turn server api
+const turn = new Turn(connection);
 
 // Something for verification
 function authMiddleware(req, res, next) {
@@ -684,6 +694,30 @@ io.on("connection", (socket) => {
 
     socket.on("voiceAction", (data) => {
         socket.to(`voice:${data.chat}`).emit("voiceAction", data);
+    });
+
+    // Getting turn credentials for specific chat
+    socket.on("getTurnUrls", async (data) => {
+        try {
+            if (!data || !data.chat) {
+                return socket.emit("error", { msg: "Chat ID is required" });
+            }
+            const [chatExists] = await connection.query("SELECT id FROM chats WHERE id=?", [data.chat]);
+            if (chatExists.length === 0) {
+                return socket.emit("error", { msg: "No such chat" });
+            }
+            if (data.chat !== 1) {
+                const [isInChat] = await connection.query("SELECT * FROM chat_users WHERE chat_id=? AND user_id=?", [data.chat, socket.user.id]);
+                if (isInChat.length === 0) {
+                    return socket.emit("error", { msg: "You are not in this chat" });
+                }
+            }
+            const urls = await turn.getTurnUrls(data.chat);
+            socket.emit("turnUrls", { urls: urls });
+        } catch (error) {
+            socket.emit("error", { msg: "Unexpected error while getting turn credentials" });
+            logger.error(`Unexpected error while getting turn credentials for chat ${data.chat} by ${formatUser(socket.user)}:\n${error}`);
+        }
     });
 });
 
