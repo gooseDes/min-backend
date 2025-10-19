@@ -10,16 +10,17 @@ Things used:
 
 -   `MariaDB` as database
 -   `TypeScript` and `JavaScript` as programming languages
+-   `Metered` as TURN server provider
 
 ## Settings
 
-### .env configuration (_italian_ means not required):
+### .env configuration (_italic_ means optional):
 
--   **`EMAIL`** is your email requested by web-push
--   **`VAPID_PUBLIC`** is your own VAPID public key(you can generate it by running `gen_push_keys.js`)
--   **`VAPID_PRIVATE`** is your own VAPID private key
--   **`METERED_SECRET`** is your own secret key on metered.ca
--   **`METERED_DOMAIN`** is your own pre domain on metered. For example: `min.metered.live`. Enter only first part
--   _`JWT_SECRET`_ is like a key for generating and validating tokens
--   _`DB_HOST`_ is an address, the database is running on
--   _`PORT`_ is a port, the server is running on
+-   **`EMAIL`** - your email required for web-push
+-   **`VAPID_PUBLIC`** - your VAPID public key (you can generate it by running `gen_push_keys.js`)
+-   **`VAPID_PRIVATE`** - your VAPID private key
+-   **`METERED_SECRET`** - your secret key from metered.ca
+-   **`METERED_DOMAIN`** - your pre-domain on metered (e.g., for `min.metered.live`, enter only `min`)
+-   _`JWT_SECRET`_ - key for generating and validating tokens
+-   _`DB_HOST`_ - address where the database is running
+-   _`PORT`_ - port for running the server
