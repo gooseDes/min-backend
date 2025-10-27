@@ -44,7 +44,7 @@ const logger = pino(
         level: "info",
         timestamp: pino.stdTimeFunctions.isoTime,
     },
-    pino.multistream(streams)
+    pino.multistream(streams),
 );
 
 logger.info("Setting things up...");
@@ -64,7 +64,7 @@ app.use(
     cors({
         origin: origins,
         credentials: true,
-    })
+    }),
 );
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
@@ -209,6 +209,31 @@ app.get("/avatars/:id.webp", (req, res) => {
     } else {
         res.sendFile(path.resolve(defaultAvatar));
     }
+});
+
+// Hosting avatars for push messages
+app.get("/avatars/:id.png", (req, res) => {
+    const filePath = path.join(avatarsDir, req.params.id + ".webp");
+    let mypath;
+
+    if (fs.existsSync(filePath)) {
+        mypath = path.resolve(filePath);
+    } else {
+        mypath = path.resolve(defaultAvatar);
+    }
+
+    sharp(mypath)
+        .resize(64, 64)
+        .toFormat("png")
+        .toBuffer()
+        .then((buffer) => {
+            res.type("image/png");
+            res.send(buffer);
+        })
+        .catch((err) => {
+            logger.error(`Error resizing avatar for user ${formatUser({ id: req.userId, name: req.userName })}:\n${err}`);
+            res.status(500).json({ success: false, msg: "Error resizing" });
+        });
 });
 
 // Route for loading attachments
@@ -425,10 +450,10 @@ io.on("connection", (socket) => {
                 const [subscriptions] = await connection.query("SELECT id, subscription FROM subscriptions WHERE user_id = ?", [row.user_id]);
                 if (row.user_id != socket.user.id) {
                     const [results] = await connection.query(
-                        `SELECT 
-                            CASE 
+                        `SELECT
+                            CASE
                                 WHEN chats.type = 'private' THEN (
-                                    SELECT u.name 
+                                    SELECT u.name
                                     FROM chat_users cu
                                     JOIN users u ON cu.user_id = u.id
                                     WHERE cu.chat_id = chats.id AND cu.user_id != ?
@@ -440,7 +465,7 @@ io.on("connection", (socket) => {
                         WHERE chats.id IN (
                             SELECT chat_id FROM chat_users WHERE user_id = ? AND chat_id = ?
                         )`,
-                        [row.user_id, row.user_id, data.chat]
+                        [row.user_id, row.user_id, data.chat],
                     );
                     if (results.length > 0) {
                         const payload = JSON.stringify({ chat: results[0].name, author: socket.user.id, message: data.text });
@@ -501,7 +526,7 @@ io.on("connection", (socket) => {
             ) AS sub
             ORDER BY sub.sent_at ASC;
             `,
-                [data.chat, data.currentMessages || 0]
+                [data.chat, data.currentMessages || 0],
             );
             const maxId = Math.max(...history.map((hist) => hist.id));
             const messages = history.map((msg) => ({
@@ -562,12 +587,12 @@ io.on("connection", (socket) => {
         try {
             const [chats] = await connection.query(
                 `
-                SELECT 
+                SELECT
                     chats.id,
                     chats.type,
-                    CASE 
+                    CASE
                         WHEN chats.type = 'private' THEN (
-                            SELECT u.name 
+                            SELECT u.name
                             FROM chat_users cu
                             JOIN users u ON cu.user_id = u.id
                             WHERE cu.chat_id = chats.id AND cu.user_id != ?
@@ -580,7 +605,7 @@ io.on("connection", (socket) => {
                     SELECT chat_id FROM chat_users WHERE user_id = ?
                 )
             `,
-                [socket.user.id, socket.user.id]
+                [socket.user.id, socket.user.id],
             );
             if (chats.length <= 0) {
                 socket.emit("chats", { chats: [] });
@@ -594,7 +619,7 @@ io.on("connection", (socket) => {
                 JOIN users u ON cu.user_id = u.id
                 WHERE cu.chat_id IN (?)
             `,
-                [chatIds]
+                [chatIds],
             );
             const participantsByChat = {};
             for (const p of participants) {
