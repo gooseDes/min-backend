@@ -1,4 +1,4 @@
-name: Deploy to GCE with Docker
+name: Deploy
 
 on:
     push:
@@ -49,6 +49,6 @@ jobs:
                     rm -rf ~/min/temp || true
                     mkdir -p ~/min/temp || true
                     docker network create min || true
-                    docker run -d -p 5000:5000 --name min-container --restart unless-stopped --network min -v ~/min/uploads:/app/uploads -v ~/min/logs:/app/logs min-backend
+                    docker run -d -p 5000:5000 --name min-container --restart unless-stopped --network min --network host -v ~/min/uploads:/app/uploads -v ~/min/logs:/app/logs min-backend
                     docker rmi $(docker images -f "dangling=true" -q) || true
                   EOF
