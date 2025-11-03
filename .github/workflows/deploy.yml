@@ -15,7 +15,7 @@ jobs:
             - name: Create .env file
               run: |
                   echo "JWT_SECRET=${{ secrets.JWT_SECRET }}" >> .env
-                  echo "DB_HOST=db" >> .env
+                  echo "DB_HOST=localhost" >> .env
                   echo "VAPID_PUBLIC=${{ secrets.VAPID_PUBLIC }}" >> .env
                   echo "VAPID_PRIVATE=${{ secrets.VAPID_PRIVATE }}" >> .env
                   echo "METERED_DOMAIN=${{ secrets.METERED_DOMAIN }}" >> .env
@@ -48,7 +48,6 @@ jobs:
                     mkdir -p ~/min/logs || true
                     rm -rf ~/min/temp || true
                     mkdir -p ~/min/temp || true
-                    docker network create min || true
-                    docker run -d -p 5000:5000 --name min-container --restart unless-stopped --network min --network host -v ~/min/uploads:/app/uploads -v ~/min/logs:/app/logs min-backend
+                    docker run -d -p 5000:5000 --name min-container --restart unless-stopped --network host -v ~/min/uploads:/app/uploads -v ~/min/logs:/app/logs min-backend
                     docker rmi $(docker images -f "dangling=true" -q) || true
                   EOF
