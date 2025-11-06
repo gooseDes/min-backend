@@ -585,7 +585,7 @@ io.on("connection", (socket) => {
 
     socket.on("getChats", async (data) => {
         try {
-            logger.info(`Gettings chats for user ${formatUser(socket.user)}...`);
+            // logger.info(`Gettings chats for user ${formatUser(socket.user)}...`);
             const [chats] = await connection.query(
                 `
                 SELECT
@@ -608,12 +608,12 @@ io.on("connection", (socket) => {
             `,
                 [socket.user.id, socket.user.id],
             );
-            logger.info(`Gettings chats for user ${formatUser(socket.user)}: Database query executed`);
+            // logger.info(`Gettings chats for user ${formatUser(socket.user)}: Database query executed`);
             if (chats.length <= 0) {
                 socket.emit("chats", { chats: [] });
                 return;
             }
-            logger.info(`Gettings chats for user ${formatUser(socket.user)}: User has chats`);
+            // logger.info(`Gettings chats for user ${formatUser(socket.user)}: User has chats`);
             const chatIds = chats.map((c) => c.id);
             const [participants] = await connection.query(
                 `
@@ -624,7 +624,7 @@ io.on("connection", (socket) => {
             `,
                 [chatIds],
             );
-            logger.info(`Getting chats for user ${formatUser(socket.user)}: Participants fetched`);
+            // logger.info(`Getting chats for user ${formatUser(socket.user)}: Participants fetched`);
             const participantsByChat = {};
             for (const p of participants) {
                 if (!participantsByChat[p.chat_id]) participantsByChat[p.chat_id] = [];
@@ -635,7 +635,7 @@ io.on("connection", (socket) => {
                 participants: participantsByChat[chat.id] || [],
             }));
             socket.emit("chats", { chats: chatsWithParticipants });
-            logger.info(`Getting chats for user ${formatUser(socket.user)}: Chats sent`);
+            // logger.info(`Getting chats for user ${formatUser(socket.user)}: Chats sent`);
         } catch (error) {
             socket.emit("error", { msg: "Unexpected error getting chats" });
             logger.error(`Unexpected error happend while getting chats by ${formatUser(socket.user)}:\n${error}`);
