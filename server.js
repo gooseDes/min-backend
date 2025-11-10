@@ -712,13 +712,17 @@ io.on("connection", (socket) => {
     });
 
     // For voice chat
-    socket.on("joinVoice", (data) => {
+    socket.on("joinVoice", async (data) => {
         if (!data || !data.chat) {
             socket.emit("error", { msg: "Chat ID is required" });
             return;
         }
         socket.join(`voice:${data.chat}`);
-        socket.emit("joinedVoice", { role: (io.sockets.adapter.rooms.get(`voice:${data.chat}`)?.size || 0) >= 2 ? "answer" : "offer" });
+        const sockets = await io.in(`voice:${data.chat}`).fetchSockets();
+        const participants = sockets.map((socket) => {
+            return { id: socket.user.id, name: socket.user.name };
+        });
+        socket.emit("joinedVoice", { role: (io.sockets.adapter.rooms.get(`voice:${data.chat}`)?.size || 0) >= 2 ? "answer" : "offer", participants });
         socket.to(`voice:${data.chat}`).emit("userJoined", { user: socket.user });
     });
 
