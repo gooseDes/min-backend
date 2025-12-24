@@ -20,7 +20,7 @@ jobs:
                   echo "VAPID_PRIVATE=${{ secrets.VAPID_PRIVATE }}" >> .env
                   echo "METERED_DOMAIN=${{ secrets.METERED_DOMAIN }}" >> .env
                   echo "METERED_SECRET=${{ secrets.METERED_SECRET }}" >> .env
-                  echo "FIREBASE_SERVICE_ACCOUNT=${{ secrets.FIREBASE_SERVICE_ACCOUNT }}"
+                  echo "FIREBASE_SERVICE_ACCOUNT=${{ secrets.FIREBASE_SERVICE_ACCOUNT }}" >> .env
 
             - name: Build Docker image
               run: docker build -t min-backend .
