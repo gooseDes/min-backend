@@ -512,20 +512,19 @@ io.on("connection", (socket) => {
             const [tokens] = await connection.query("SELECT token FROM fcm_tokens WHERE user_id IN (?)", [usersFiltered.map((user) => user.user_id)]);
 
             if (tokens.length) {
-                const message = {
+                await fcm.sendEachForMulticast({
                     notification: {
                         title: to_send.author,
                         body: to_send.text,
-                        data: {
-                            authorId: to_send.author_id,
-                            chatId: data.chat,
-                            messageId: to_send.id,
-                            sentAt: to_send.sent_at,
-                        },
+                    },
+                    data: {
+                        authorId: String(to_send.author_id),
+                        chatId: String(data.chat),
+                        messageId: String(to_send.id),
+                        sentAt: String(to_send.sent_at),
                     },
                     tokens: tokens.map((token) => token.token),
-                };
-                await fcm.sendEachForMulticast(message);
+                });
             }
         } catch (error) {
             socket.emit("error", { msg: "Unexpected error while sending your message" });
