@@ -516,6 +516,12 @@ io.on("connection", (socket) => {
                     notification: {
                         title: to_send.author,
                         body: to_send.text,
+                        data: {
+                            authorId: to_send.author_id,
+                            chatId: data.chat,
+                            messageId: to_send.id,
+                            sentAt: to_send.sent_at,
+                        },
                     },
                     tokens: tokens.map((token) => token.token),
                 };
