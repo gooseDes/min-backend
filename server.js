@@ -534,6 +534,7 @@ io.on("connection", (socket) => {
                 socket.emit("error", { msg: "Chat ID is required to get chat history" });
                 return;
             }
+            logger.info(`${formatUser(socket.user)} requested history of chat ${data.chat || "Unknown"}`);
             const [history] = await connection.query(
                 `SELECT * FROM (
                 SELECT
