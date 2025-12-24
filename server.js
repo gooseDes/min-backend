@@ -786,7 +786,7 @@ io.on("connection", (socket) => {
         try {
             const [tokenExists] = await connection.query("SELECT id FROM fcm_tokens WHERE token=?", [data.token]);
             if (tokenExists.length > 0) {
-                return socket.emit("error", { msg: "Token already exists" });
+                return socket.emit("error", { msg: "Token already exists", hidden: true });
             }
             await connection.query("INSERT INTO fcm_tokens (token, user_id) VALUES (?, ?)", [data.token, socket.user.id]);
         } catch (error) {
