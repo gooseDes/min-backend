@@ -15,7 +15,10 @@ import { formatUser, jsonToObject, objectToJson, validateString } from "./lib/ut
 import { Database } from "./lib/db.ts";
 import pino from "pino";
 import { Turn } from "./lib/turn.ts";
+import { initAdmin, fcm } from "./lib/firebaseAdmin.ts";
 dotenv.config({ quiet: true });
+
+initAdmin();
 
 const EMOJI_SIZE = 96;
 const AVATAR_SIZE = 512;
@@ -147,6 +150,13 @@ await turnKeysTable.addColumn("created_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 await turnKeysTable.addColumn("available_for", "INT DEFAULT 14400"); // In seconds
 await turnKeysTable.addColumn("chat_id", "INT NOT NULL");
 await turnKeysTable.addConstraint("fk_chat_id", "FOREIGN KEY (chat_id) REFERENCES chats(id) ON DELETE CASCADE");
+
+// Table for storing FCM tokens
+const fcmTokenTable = await db.createTable("fcm_tokens");
+await fcmTokenTable.addColumn("token", "VARCHAR(256) NOT NULL");
+await fcmTokenTable.addColumn("created_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP");
+await fcmTokenTable.addColumn("user_id", "INT NOT NULL");
+await fcmTokenTable.addConstraint("fk_user_id", "FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE");
 
 await db.end();
 
@@ -444,7 +454,7 @@ io.on("connection", (socket) => {
             };
             io.to(`chat:${data.chat}`).emit("message", to_send);
 
-            // Sending push messages
+            // Sending webpush messages
             const [chat_users] = await connection.query("SELECT user_id FROM chat_users WHERE chat_id=?", [data.chat]);
             chat_users.forEach(async (row) => {
                 const [subscriptions] = await connection.query("SELECT id, subscription FROM subscriptions WHERE user_id = ?", [row.user_id]);
@@ -495,6 +505,22 @@ io.on("connection", (socket) => {
                     }
                 }
             });
+
+            // Sending FCM messages
+            const [users] = await connection.query("SELECT user_id FROM chat_users WHERE chat_id=?", [data.chat]);
+            const usersFiltered = users.filter((user) => user.user_id !== socket.user.id);
+            const [tokens] = await connection.query("SELECT token FROM fcm_tokens WHERE user_id IN (?)", [usersFiltered.map((user) => user.user_id)]);
+
+            if (tokens.length) {
+                const message = {
+                    notification: {
+                        title: to_send.author,
+                        body: to_send.text,
+                    },
+                    tokens: tokens.map((token) => token.token),
+                };
+                await fcm.sendEachForMulticast(message);
+            }
         } catch (error) {
             socket.emit("error", { msg: "Unexpected error while sending your message" });
             logger.error(`Unexpected error happend while sending message by ${formatUser(socket.user)}:\n${error}`);
@@ -751,6 +777,20 @@ io.on("connection", (socket) => {
         } catch (error) {
             socket.emit("error", { msg: "Unexpected error while getting turn credentials" });
             logger.error(`Unexpected error while getting turn credentials for chat ${data.chat} by ${formatUser(socket.user)}:\n${error}`);
+        }
+    });
+
+    // Adding FCM token
+    socket.on("addFcmToken", async (data) => {
+        try {
+            const [tokenExists] = await connection.query("SELECT id FROM fcm_tokens WHERE token=?", [data.token]);
+            if (tokenExists.length > 0) {
+                return socket.emit("error", { msg: "Token already exists" });
+            }
+            await connection.query("INSERT INTO fcm_tokens (token, user_id) VALUES (?, ?)", [data.token, socket.user.id]);
+        } catch (error) {
+            socket.emit("error", { msg: "Unexpected error while adding FCM token" });
+            logger.error(`Unexpected error while adding FCM token by ${formatUser(socket.user)}:\n${error}`);
         }
     });
 });
