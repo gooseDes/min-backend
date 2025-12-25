@@ -513,11 +513,9 @@ io.on("connection", (socket) => {
 
             if (tokens.length) {
                 await fcm.sendEachForMulticast({
-                    notification: {
-                        title: to_send.author,
-                        body: to_send.text,
-                    },
                     data: {
+                        authorName: String(to_send.author),
+                        text: String(to_send.text),
                         authorId: String(to_send.author_id),
                         chatId: String(data.chat),
                         messageId: String(to_send.id),
