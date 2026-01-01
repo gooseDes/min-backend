@@ -812,7 +812,7 @@ io.on("connection", (socket) => {
             if (!message.length) {
                 socket.emit("error", { msg: "Message not found", hidden: true });
             }
-            socket.emit("message", { message: message[0] });
+            socket.emit("requestedMessage", { message: message[0] });
         } catch (error) {
             socket.emit("error", { msg: "Unexpected error while getting message" });
             logger.error(`Unexpected error while getting message from chat ${data.chat} by ${formatUser(socket.user)}:\n${error}`);
