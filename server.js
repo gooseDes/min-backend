@@ -801,16 +801,16 @@ io.on("connection", (socket) => {
     // Get only one message from specific chat
     socket.on("getMessage", async (data) => {
         try {
-            if (!data || !data.chatId || !data.messageId) {
-                socket.emit("error", { msg: "ChatId and messageId are required" });
+            if (!data || !data.messageId) {
+                return socket.emit("error", { msg: "messageId is required" });
             }
-            const [inChat] = await connection.query("SELECT * FROM chat_users WHERE chat_id=? AND user_id=?", [data.chatId, socket.user.id]);
-            if (!inChat.length) {
-                socket.emit("error", { msg: "You are not in this chat" });
-            }
-            const [message] = await connection.query("SELECT * FROM messages WHERE id=? AND chat_id=?", [data.messageId, data.chatId]);
+            const [message] = await connection.query("SELECT * FROM messages WHERE id=?", [data.messageId]);
             if (!message.length) {
-                socket.emit("error", { msg: "Message not found", hidden: true });
+                return socket.emit("error", { msg: "Message not found", hidden: true });
+            }
+            const [inChat] = await connection.query("SELECT * FROM chat_users WHERE chat_id=? AND user_id=?", [message[0].chat_id, socket.user.id]);
+            if (!inChat.length) {
+                return socket.emit("error", { msg: "You are not in this chat" });
             }
             socket.emit("requestedMessage", { message: message[0] });
         } catch (error) {
