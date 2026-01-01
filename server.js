@@ -808,9 +808,11 @@ io.on("connection", (socket) => {
             if (!message.length) {
                 return socket.emit("error", { msg: "Message not found", hidden: true });
             }
-            const [inChat] = await connection.query("SELECT * FROM chat_users WHERE chat_id=? AND user_id=?", [message[0].chat_id, socket.user.id]);
-            if (!inChat.length) {
-                return socket.emit("error", { msg: "You are not in this chat" });
+            if (message[0].chat_id !== 1) {
+                const [inChat] = await connection.query("SELECT * FROM chat_users WHERE chat_id=? AND user_id=?", [message[0].chat_id, socket.user.id]);
+                if (!inChat.length) {
+                    return socket.emit("error", { msg: "You are not in this chat" });
+                }
             }
             socket.emit("requestedMessage", { message: message[0] });
         } catch (error) {
