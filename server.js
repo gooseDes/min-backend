@@ -797,6 +797,27 @@ io.on("connection", (socket) => {
             logger.error(`Unexpected error while adding FCM token by ${formatUser(socket.user)}:\n${error}`);
         }
     });
+
+    // Get only one message from specific chat
+    socket.on("getMessage", async (data) => {
+        try {
+            if (!data || !data.chatId || !data.messageId) {
+                socket.emit("error", { msg: "ChatId and messageId are required" });
+            }
+            const [inChat] = await connection.query("SELECT * FROM chat_users WHERE chat_id=? AND user_id=?", [data.chatId, socket.user.id]);
+            if (!inChat.length) {
+                socket.emit("error", { msg: "You are not in this chat" });
+            }
+            const [message] = await connection.query("SELECT * FROM messages WHERE id=? AND chat_id=?", [data.messageId, data.chatId]);
+            if (!message.length) {
+                socket.emit("error", { msg: "Message not found", hidden: true });
+            }
+            socket.emit("message", { message: message[0] });
+        } catch (error) {
+            socket.emit("error", { msg: "Unexpected error while getting message" });
+            logger.error(`Unexpected error while getting message from chat ${data.chat} by ${formatUser(socket.user)}:\n${error}`);
+        }
+    });
 });
 
 // Pinging MySQL connection every minute
