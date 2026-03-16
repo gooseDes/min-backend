@@ -433,6 +433,7 @@ io.use(async (socket, next) => {
 
 io.on("connection", (socket) => {
     socket.on("msg", async (data) => {
+        console.log(data); // Debugging
         try {
             if (!data || !data.text || !data.chat) {
                 socket.emit("error", { msg: "Message is empty or some required arguments are missing" });
