@@ -433,7 +433,7 @@ io.use(async (socket, next) => {
 
 io.on("connection", (socket) => {
     socket.on("msg", async (data) => {
-        console.log(data); // Debugging
+        console.log(data); // Debug
         try {
             if (!data || !data.text || !data.chat) {
                 socket.emit("error", { msg: "Message is empty or some required arguments are missing" });
@@ -441,7 +441,9 @@ io.on("connection", (socket) => {
             }
 
             // Saving to db
+            console.log(1);
             const [inserted] = await connection.query("INSERT INTO messages (chat_id, sender_id, content) VALUES (?, ?, ?)", [data.chat, socket.user.id, data.text]);
+            console.log(2);
             const [inserted_data] = await connection.query("SELECT id, UNIX_TIMESTAMP(sent_at) AS sent_at FROM messages WHERE id=?", [inserted.insertId]);
 
             // Sending to everyone
@@ -456,10 +458,12 @@ io.on("connection", (socket) => {
             io.to(`chat:${data.chat}`).emit("message", to_send);
 
             // Sending webpush messages
+            console.log(3);
             const [chat_users] = await connection.query("SELECT user_id FROM chat_users WHERE chat_id=?", [data.chat]);
             chat_users.forEach(async (row) => {
                 const [subscriptions] = await connection.query("SELECT id, subscription FROM subscriptions WHERE user_id = ?", [row.user_id]);
                 if (row.user_id != socket.user.id) {
+                    console.log(4);
                     const [results] = await connection.query(
                         `SELECT
                             CASE
@@ -508,8 +512,10 @@ io.on("connection", (socket) => {
             });
 
             // Sending FCM messages
+            console.log(5);
             const [users] = await connection.query("SELECT user_id FROM chat_users WHERE chat_id=?", [data.chat]);
             const usersFiltered = users.filter((user) => user.user_id !== socket.user.id);
+            console.log(6);
             const [tokens] = await connection.query("SELECT token FROM fcm_tokens WHERE user_id IN (?)", [usersFiltered.map((user) => user.user_id)]);
 
             if (tokens.length) {
