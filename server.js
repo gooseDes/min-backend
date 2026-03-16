@@ -516,20 +516,22 @@ io.on("connection", (socket) => {
             const [users] = await connection.query("SELECT user_id FROM chat_users WHERE chat_id=?", [data.chat]);
             const usersFiltered = users.filter((user) => user.user_id !== socket.user.id);
             console.log(6);
-            const [tokens] = await connection.query("SELECT token FROM fcm_tokens WHERE user_id IN (?)", [usersFiltered.map((user) => user.user_id)]);
+            if (usersFiltered.length) {
+                const [tokens] = await connection.query("SELECT token FROM fcm_tokens WHERE user_id IN (?)", [usersFiltered.map((user) => user.user_id)]);
 
-            if (tokens.length) {
-                await fcm.sendEachForMulticast({
-                    data: {
-                        authorName: String(to_send.author),
-                        text: String(to_send.text),
-                        authorId: String(to_send.author_id),
-                        chatId: String(data.chat),
-                        messageId: String(to_send.id),
-                        sentAt: String(to_send.sent_at),
-                    },
-                    tokens: tokens.map((token) => token.token),
-                });
+                if (tokens.length) {
+                    await fcm.sendEachForMulticast({
+                        data: {
+                            authorName: String(to_send.author),
+                            text: String(to_send.text),
+                            authorId: String(to_send.author_id),
+                            chatId: String(data.chat),
+                            messageId: String(to_send.id),
+                            sentAt: String(to_send.sent_at),
+                        },
+                        tokens: tokens.map((token) => token.token),
+                    });
+                }
             }
         } catch (error) {
             socket.emit("error", { msg: "Unexpected error while sending your message" });
