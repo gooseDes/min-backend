@@ -591,6 +591,10 @@ io.on("connection", (socket) => {
                 socket.emit("createChatResult", { success: false, msg: "Nickname is required" });
                 return;
             }
+            if (data.nickname === socket.user.name) {
+                socket.emit("createChatResult", { success: false, msg: "Cannot create chat with yourself" });
+                return;
+            }
             const [user_ids] = await connection.query("SELECT id FROM users WHERE name = ?", [data.nickname]);
             if (user_ids.length === 0) {
                 socket.emit("createChatResult", { success: false, msg: "No such user" });
