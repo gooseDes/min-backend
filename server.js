@@ -522,6 +522,9 @@ io.on("connection", (socket) => {
                             messageId: String(to_send.id),
                             sentAt: String(to_send.sent_at),
                         },
+                        android: {
+                            priority: "high",
+                        },
                         tokens: tokens.map((token) => token.token),
                     });
                 }
