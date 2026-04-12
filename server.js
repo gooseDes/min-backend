@@ -510,7 +510,7 @@ io.on("connection", (socket) => {
                         [row.user_id, row.user_id, data.chat],
                     );
                     if (results.length > 0) {
-                        const payload = JSON.stringify({ chat: results[0].name, author: socket.user.id, message: data.text });
+                        const payload = JSON.stringify({ chat: results[0].name, author: socket.user.id, authorAvatar: author_avatar, message: data.text });
                         let sentCount = 0;
 
                         subscriptions.forEach((sub) => {
@@ -550,6 +550,7 @@ io.on("connection", (socket) => {
                             authorName: String(to_send.author),
                             text: String(to_send.text),
                             authorId: String(to_send.author_id),
+                            authorAvatar: String(author_avatar),
                             chatId: String(data.chat),
                             messageId: String(to_send.id),
                             sentAt: String(to_send.sent_at),
