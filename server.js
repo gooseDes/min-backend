@@ -470,11 +470,16 @@ io.on("connection", (socket) => {
             const [inserted] = await connection.query("INSERT INTO messages (chat_id, sender_id, content) VALUES (?, ?, ?)", [data.chat, socket.user.id, data.text]);
             const [inserted_data] = await connection.query("SELECT id, UNIX_TIMESTAMP(sent_at) AS sent_at FROM messages WHERE id=?", [inserted.insertId]);
 
+            // Getting avatar
+            const [avatar] = await connection.query("SELECT avatar FROM users WHERE id=?", [socket.user.id]);
+            const author_avatar = avatar[0]?.avatar || null;
+
             // Sending to everyone
             const to_send = {
                 id: inserted.insertId,
                 text: data.text,
                 author_id: socket.user.id,
+                author_avatar: author_avatar,
                 author: socket.user.name,
                 chat: data.chat,
                 sent_at: inserted_data[0].sent_at,
