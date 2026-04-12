@@ -103,6 +103,7 @@ const usersTable = await db.createTable("users");
 await usersTable.addColumn("name", "VARCHAR(64)");
 await usersTable.addColumn("email", "VARCHAR(64)");
 await usersTable.addColumn("password", "VARCHAR(64)");
+await usersTable.addColumn("avatar", "VARCHAR(64) DEFAULT 'replace'");
 
 // Chats Table
 const chatsTable = await db.createTable("chats");
@@ -169,6 +170,14 @@ const connection = await createConnection({
     multipleStatements: false,
 });
 
+// Add avatar column to users table
+const [users] = await connection.query("SELECT * FROM users");
+for (const user of users) {
+    if (user.avatar === "replace") {
+        await connection.query("UPDATE users SET avatar = ? WHERE id = ?", [`${user.id}`, user.id]);
+    }
+}
+
 // Initializing turn server api
 const turn = new Turn(connection);
 
@@ -196,14 +205,28 @@ app.post("/upload-avatar", authMiddleware, upload.single("avatar"), async (req, 
         if (!req.file) return res.status(400).json({ success: false, msg: "File is not loaded" });
 
         const userId = req.userId;
-        const outPath = path.join(avatarsDir, `${userId}.webp`);
+        const suffix = Math.round(Date.now() / 1000);
+        const outPath = path.join(avatarsDir, `${userId}_${suffix}.webp`);
 
         // Converting and resizing image
         await sharp(req.file.path).resize(AVATAR_SIZE, AVATAR_SIZE, { fit: "cover" }).toFormat("webp", { quality: 80 }).toFile(outPath);
 
+        // Deleting temp
         fs.unlinkSync(req.file.path);
 
-        res.json({ success: true, url: `/avatars/${userId}.webp` });
+        // Deleting old avatar
+        const oldAvatarDb = await connection.query("SELECT avatar FROM users WHERE id = ?", [userId]);
+        if (oldAvatarDb[0][0].avatar) {
+            const oldAvatar = oldAvatarDb[0][0].avatar;
+            try {
+                console.log(path.join(avatarsDir, oldAvatar + ".webp"));
+                fs.unlinkSync(path.join(avatarsDir, oldAvatar + ".webp"));
+            } catch (err) {}
+        }
+
+        await connection.query("UPDATE users SET avatar = ? WHERE id = ?", [`${userId}_${suffix}`, userId]);
+
+        res.json({ success: true, url: `/avatars/${userId}_${suffix}.webp`, avatar: `${userId}_${suffix}` });
         logger.info(`${formatUser({ id: userId, name: req.userName })} uploaded their avatar`);
     } catch (err) {
         logger.error(`Error loading avatar for user ${formatUser({ id: req.userId, name: req.userName })}:\n${err}`);
@@ -213,6 +236,10 @@ app.post("/upload-avatar", authMiddleware, upload.single("avatar"), async (req, 
 
 // Hosting avatars
 app.get("/avatars/:id.webp", (req, res) => {
+    /*if (req.params.id.split("_").length <= 1) {
+        const avatarName = await connection.query("SELECT avatar FROM users WHERE id = ?", [req.params.id]);
+        req.params.id = avatarName[0][0].avatar;
+    }*/
     const filePath = path.join(avatarsDir, req.params.id + ".webp");
     if (fs.existsSync(filePath)) {
         res.sendFile(path.resolve(filePath));
@@ -552,7 +579,8 @@ io.on("connection", (socket) => {
                     UNIX_TIMESTAMP(messages.sent_at) AS sent_at,
                     messages.sender_id,
                     messages.seen,
-                    users.name AS sender_name
+                    users.name AS sender_name,
+                    users.avatar AS sender_avatar
                 FROM messages
                 JOIN users ON messages.sender_id = users.id
                 WHERE messages.chat_id = ?
@@ -568,12 +596,14 @@ io.on("connection", (socket) => {
                 id: msg.id,
                 chat_id: msg.chat_id,
                 author_id: msg.sender_id,
+                author_avatar: msg.sender_avatar,
                 author: msg.sender_name,
                 text: msg.content,
                 sent_at: msg.sent_at,
                 seen: msg.seen,
             }));
             socket.emit("history", { chat: data.chat, messages: messages, lastIndex: maxId });
+            console.log(messages);
         } catch (err) {
             logger.error(`Unexpected error happend while sending chat history to ${formatUser(socket.user)}:\n${err}`);
             socket.emit("error", { msg: "Unexpected error happend while sending chat history" });
@@ -656,7 +686,7 @@ io.on("connection", (socket) => {
             const chatIds = chats.map((c) => c.id);
             const [participants] = await connection.query(
                 `
-                SELECT cu.chat_id, u.id as user_id, u.name
+                SELECT cu.chat_id, u.id as user_id, u.name, u.avatar
                 FROM chat_users cu
                 JOIN users u ON cu.user_id = u.id
                 WHERE cu.chat_id IN (?)
@@ -667,7 +697,7 @@ io.on("connection", (socket) => {
             const participantsByChat = {};
             for (const p of participants) {
                 if (!participantsByChat[p.chat_id]) participantsByChat[p.chat_id] = [];
-                participantsByChat[p.chat_id].push({ id: p.user_id, name: p.name });
+                participantsByChat[p.chat_id].push({ id: p.user_id, name: p.name, avatar: p.avatar });
             }
             const chatsWithParticipants = chats.map((chat) => ({
                 ...chat,
@@ -687,7 +717,7 @@ io.on("connection", (socket) => {
             socket.emit("error", { msg: "No data provided" });
             return;
         }
-        const [results] = await connection.query("SELECT id, name FROM users WHERE id = ? OR name = ?", [data.id || 0, data.name || ""]);
+        const [results] = await connection.query("SELECT id, name, avatar FROM users WHERE id = ? OR name = ?", [data.id || 0, data.name || ""]);
         socket.emit("userInfo", { user: results[0] });
     });
 
