@@ -279,17 +279,35 @@ app.post("/attach", authMiddleware, upload.array("attachments", 5), async (req, 
         if (!req.files || req.files.length === 0) return res.status(400).json({ success: false, msg: "Files are not loaded" });
         const userId = req.userId;
         const urls = [];
+
+        const imageExts = new Set([".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".tiff"]);
+
         for (let file of req.files) {
-            const ext = path.extname(file.originalname);
-            const newFilename = `${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`;
+            const ext = path.extname(file.originalname).toLowerCase();
+            const isImage = imageExts.has(ext);
+            const newFilename = `${Date.now()}-${Math.round(Math.random() * 1e9)}${isImage ? ".webp" : ext}`;
             const outPath = path.join(attachmentsDir, newFilename);
-            fs.renameSync(file.path, outPath);
+
+            if (isImage) {
+                await sharp(file.path).withMetadata(false).webp({ quality: 85 }).toFile(outPath);
+                fs.unlinkSync(file.path);
+            } else {
+                // fs.renameSync(file.path, outPath);
+                fs.unlinkSync(file.path);
+            }
+
             urls.push(`/attachments/${newFilename}`);
             logger.info(`${formatUser({ id: userId, name: req.userName })} uploaded attachment ${newFilename}`);
         }
+
         res.json({ success: true, urls: urls });
     } catch (err) {
         logger.error(`Error loading attachments for ${formatUser({ id: req.userId, name: req.userName })}:\n${err}`);
+
+        for (const file of req.files ?? []) {
+            if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
+        }
+
         res.status(500).json({ success: false, msg: "Error loading" });
     }
 });
