@@ -7,7 +7,7 @@
         "db": "node show_tables.js",
         "start": "npx tsx --env-file .env src/main.ts",
         "dev": "npx tsx --env-file .env --watch src/main.ts",
-        "release": "git push origin main:release -f"
+        "deploy": "git push origin main:release -f"
     },
     "repository": {
         "type": "git",
