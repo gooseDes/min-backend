@@ -1,22 +1,29 @@
-import { createConnection } from "mysql2/promise";
-import express from "express";
-import { createServer } from "http";
-import { Server } from "socket.io";
-import cors from "cors";
 import bcrypt from "bcrypt";
-import dotenv from "dotenv";
-import jwt from "jsonwebtoken";
-import path from "path";
+import cors from "cors";
+import { and, asc, desc, eq, inArray, ne, or, sql } from "drizzle-orm";
+import express, { Request, Response } from "express";
 import fs from "fs";
+import { createServer } from "http";
+import jwt from "jsonwebtoken";
 import multer from "multer";
-import sharp from "sharp";
-import webpush from "web-push";
-import { formatUser, jsonToObject, objectToJson, validateString } from "./lib/utils.ts";
-import { Database } from "./lib/db.ts";
+import path from "path";
 import pino from "pino";
-import { Turn } from "./lib/turn.ts";
-import { initAdmin, fcm } from "./lib/firebaseAdmin.ts";
-dotenv.config({ quiet: true });
+import sharp from "sharp";
+import { Server } from "socket.io";
+import webpush from "web-push";
+import { db } from "./db/index.js";
+import {
+    chatsTable,
+    chatUsersTable,
+    emojisTable,
+    fcmTokensTable,
+    messagesTable,
+    subscriptionsTable,
+    usersTable,
+} from "./db/schema.js";
+import { fcm, initAdmin } from "./lib/firebaseAdmin.js";
+import { Turn } from "./lib/turn.js";
+import { formatUser, jsonToObject, objectToJson, validateString } from "./lib/utils.js";
 
 initAdmin();
 
@@ -52,7 +59,7 @@ const logger = pino(
 
 logger.info("Setting things up...");
 
-const origins = ["http://localhost:3000", "http://192.168.0.120:3000", "https://web.msg-min.xyz"];
+const origins = ["http://localhost:3000", "http://192.168.0.120:3000", "https://msg-min.xyz"];
 
 const app = express();
 const server = createServer(app);
@@ -94,95 +101,44 @@ const upload = multer({ dest: path.join(uploadsDir, "temp"), limits: { fileSize:
 
 const JWT_SECRET = process.env.JWT_SECRET || "defaultsecret";
 
-// Initializing database
-const db = new Database();
-await db.init("min");
-
-// Users Table
-const usersTable = await db.createTable("users");
-await usersTable.addColumn("name", "VARCHAR(64)");
-await usersTable.addColumn("email", "VARCHAR(64)");
-await usersTable.addColumn("password", "VARCHAR(64)");
-await usersTable.addColumn("avatar", "VARCHAR(64) DEFAULT 'replace'");
-
-// Chats Table
-const chatsTable = await db.createTable("chats");
-await chatsTable.addColumn("type", "ENUM('private', 'group') DEFAULT 'group'");
-await chatsTable.addColumn("name", "VARCHAR(64)");
-
-// Creating default chat
-await db.executeCommand("INSERT IGNORE INTO chats (id, type, name) VALUES (1, 'group', 'Default Chat')");
-
-// Table for connection between chats and users
-const chatUsersTable = await db.createTable("chat_users", false);
-await chatUsersTable.addColumn("chat_id", "INT");
-await chatUsersTable.addColumn("user_id", "INT");
-await chatUsersTable.addConstraint("pk_chat_users", "PRIMARY KEY (chat_id, user_id)");
-await chatUsersTable.addConstraint("fk_chat_id", "FOREIGN KEY (chat_id) REFERENCES chats(id) ON DELETE CASCADE");
-await chatUsersTable.addConstraint("fk_user_id", "FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE");
-
-// Messages table
-const messagesTable = await db.createTable("messages");
-await messagesTable.addColumn("chat_id", "INT NOT NULL");
-await messagesTable.addColumn("sender_id", "INT NOT NULL");
-await messagesTable.addColumn("content", "TEXT NOT NULL");
-await messagesTable.addColumn("sent_at", "DATETIME DEFAULT CURRENT_TIMESTAMP");
-await messagesTable.addColumn("seen", "BOOLEAN DEFAULT 0");
-await messagesTable.addColumn("seen_at", "DATETIME");
-await messagesTable.addConstraint("fk_chat_id", "FOREIGN KEY (chat_id) REFERENCES chats(id) ON DELETE CASCADE");
-await messagesTable.addConstraint("fk_sender_id", "FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE");
-
-// Subscriptions table
-const subscriptionsTable = await db.createTable("subscriptions");
-await subscriptionsTable.addColumn("user_id", "INT NOT NULL");
-await subscriptionsTable.addColumn("subscription", "JSON NOT NULL");
-await subscriptionsTable.addColumn("created_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP");
-
-// Emojis table
-const emojisTable = await db.createTable("emojis");
-await emojisTable.addColumn("name", "VARCHAR(64) NOT NULL");
-await emojisTable.addColumn("uploader_id", "INT NOT NULL");
-await emojisTable.addConstraint("fk_uploader_id", "FOREIGN KEY (uploader_id) REFERENCES users(id) ON DELETE CASCADE");
-
-// Table for tracking turn api keys
-const turnKeysTable = await db.createTable("turn_keys");
-await turnKeysTable.addColumn("api_key", "VARCHAR(128) NOT NULL");
-await turnKeysTable.addColumn("created_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP");
-await turnKeysTable.addColumn("available_for", "INT DEFAULT 14400"); // In seconds
-await turnKeysTable.addColumn("chat_id", "INT NOT NULL");
-await turnKeysTable.addConstraint("fk_chat_id", "FOREIGN KEY (chat_id) REFERENCES chats(id) ON DELETE CASCADE");
-
-// Table for storing FCM tokens
-const fcmTokenTable = await db.createTable("fcm_tokens");
-await fcmTokenTable.addColumn("token", "VARCHAR(256) NOT NULL");
-await fcmTokenTable.addColumn("created_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP");
-await fcmTokenTable.addColumn("user_id", "INT NOT NULL");
-await fcmTokenTable.addConstraint("fk_user_id", "FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE");
-
-await db.end();
-
-// Creating connection with database
-const connection = await createConnection({
-    host: process.env.DB_HOST || "localhost",
-    user: "root",
-    password: "root",
-    database: "min",
-    multipleStatements: false,
-});
+await db
+    .insert(chatsTable)
+    .values({ id: 1, type: "group", name: "Default Chat" })
+    .onDuplicateKeyUpdate({ set: { id: 1 } });
 
 // Add avatar column to users table
-const [users] = await connection.query("SELECT * FROM users");
+const users = await db.select().from(usersTable);
 for (const user of users) {
     if (user.avatar === "replace") {
-        await connection.query("UPDATE users SET avatar = ? WHERE id = ?", [`${user.id}`, user.id]);
+        await db
+            .update(usersTable)
+            .set({ avatar: `${user.id}` })
+            .where(eq(usersTable.id, user.id));
     }
 }
 
 // Initializing turn server api
-const turn = new Turn(connection);
+const turn = new Turn(db.$client);
+
+interface TokenPayload {
+    id: number;
+    name: string;
+    email: string;
+}
+
+interface AuthRequest extends Request {
+    userId?: number;
+    userName?: string;
+}
+
+declare module "socket.io" {
+    interface Socket {
+        user?: TokenPayload;
+    }
+}
 
 // Something for verification
-function authMiddleware(req, res, next) {
+function authMiddleware(req: AuthRequest, res: Response, next: () => void) {
     const authHeader = req.headers["authorization"];
     if (!authHeader) return res.status(401).json({ error: "No token" });
 
@@ -190,7 +146,7 @@ function authMiddleware(req, res, next) {
     if (!token) return res.status(401).json({ error: "Invalid token" });
 
     try {
-        const decoded = jwt.verify(token, JWT_SECRET);
+        const decoded = jwt.verify(token, JWT_SECRET) as TokenPayload;
         req.userId = decoded.id;
         req.userName = decoded.name;
         next();
@@ -200,7 +156,7 @@ function authMiddleware(req, res, next) {
 }
 
 // Route for loading avatars
-app.post("/upload-avatar", authMiddleware, upload.single("avatar"), async (req, res) => {
+app.post("/upload-avatar", authMiddleware, upload.single("avatar"), async (req: AuthRequest, res: Response) => {
     try {
         if (!req.file) return res.status(400).json({ success: false, msg: "File is not loaded" });
 
@@ -209,22 +165,28 @@ app.post("/upload-avatar", authMiddleware, upload.single("avatar"), async (req, 
         const outPath = path.join(avatarsDir, `${userId}_${suffix}.webp`);
 
         // Converting and resizing image
-        await sharp(req.file.path).resize(AVATAR_SIZE, AVATAR_SIZE, { fit: "cover" }).toFormat("webp", { quality: 80 }).toFile(outPath);
+        await sharp(req.file.path)
+            .resize(AVATAR_SIZE, AVATAR_SIZE, { fit: "cover" })
+            .toFormat("webp", { quality: 80 })
+            .toFile(outPath);
 
         // Deleting temp
         fs.unlinkSync(req.file.path);
 
         // Deleting old avatar
-        const oldAvatarDb = await connection.query("SELECT avatar FROM users WHERE id = ?", [userId]);
-        if (oldAvatarDb[0][0].avatar) {
-            const oldAvatar = oldAvatarDb[0][0].avatar;
+        const oldAvatarDb = await db.query.usersTable.findFirst({ where: eq(usersTable.id, userId) });
+        if (oldAvatarDb?.avatar) {
+            const oldAvatar = oldAvatarDb.avatar;
             try {
                 console.log(path.join(avatarsDir, oldAvatar + ".webp"));
                 fs.unlinkSync(path.join(avatarsDir, oldAvatar + ".webp"));
             } catch (err) {}
         }
 
-        await connection.query("UPDATE users SET avatar = ? WHERE id = ?", [`${userId}_${suffix}`, userId]);
+        await db
+            .update(usersTable)
+            .set({ avatar: `${userId}_${suffix}` })
+            .where(eq(usersTable.id, userId));
 
         res.json({ success: true, url: `/avatars/${userId}_${suffix}.webp`, avatar: `${userId}_${suffix}` });
         logger.info(`${formatUser({ id: userId, name: req.userName })} uploaded their avatar`);
@@ -251,7 +213,7 @@ app.get("/avatars/:id.webp", (req, res) => {
 // Hosting avatars for push messages
 app.get("/avatars/:id.png", (req, res) => {
     const filePath = path.join(avatarsDir, req.params.id + ".webp");
-    let mypath;
+    let mypath: string;
 
     if (fs.existsSync(filePath)) {
         mypath = path.resolve(filePath);
@@ -263,18 +225,18 @@ app.get("/avatars/:id.png", (req, res) => {
         .resize(64, 64)
         .toFormat("png")
         .toBuffer()
-        .then((buffer) => {
+        .then(buffer => {
             res.type("image/png");
             res.send(buffer);
         })
-        .catch((err) => {
-            logger.error(`Error resizing avatar for user ${formatUser({ id: req.userId, name: req.userName })}:\n${err}`);
+        .catch(err => {
+            logger.error(`Error resizing avatar for someone:\n${err}`);
             res.status(500).json({ success: false, msg: "Error resizing" });
         });
 });
 
 // Route for loading attachments
-app.post("/attach", authMiddleware, upload.array("attachments", 5), async (req, res) => {
+app.post("/attach", authMiddleware, upload.array("attachments", 5), async (req: AuthRequest, res: Response) => {
     try {
         if (!req.files || req.files.length === 0) return res.status(400).json({ success: false, msg: "Files are not loaded" });
         const userId = req.userId;
@@ -282,6 +244,7 @@ app.post("/attach", authMiddleware, upload.array("attachments", 5), async (req, 
 
         const imageExts = new Set([".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".tiff"]);
 
+        if (!Array.isArray(req.files)) return res.status(400).json({ success: false, msg: "Files are not loaded" });
         for (let file of req.files) {
             const ext = path.extname(file.originalname).toLowerCase();
             const isImage = imageExts.has(ext);
@@ -289,7 +252,7 @@ app.post("/attach", authMiddleware, upload.array("attachments", 5), async (req, 
             const outPath = path.join(attachmentsDir, newFilename);
 
             if (isImage) {
-                await sharp(file.path).withMetadata(false).webp({ quality: 85 }).toFile(outPath);
+                await sharp(file.path).rotate().webp({ quality: 85 }).toFile(outPath);
                 fs.unlinkSync(file.path);
             } else {
                 // fs.renameSync(file.path, outPath);
@@ -304,6 +267,7 @@ app.post("/attach", authMiddleware, upload.array("attachments", 5), async (req, 
     } catch (err) {
         logger.error(`Error loading attachments for ${formatUser({ id: req.userId, name: req.userName })}:\n${err}`);
 
+        if (!Array.isArray(req.files)) return res.status(500).json({ success: false, msg: "Error loading" });
         for (const file of req.files ?? []) {
             if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
         }
@@ -323,21 +287,25 @@ app.get("/attachments/:filename", (req, res) => {
 });
 
 // Route for uploading custom emojis
-app.post("/upload-emoji", authMiddleware, upload.single("emoji"), async (req, res) => {
+app.post("/upload-emoji", authMiddleware, upload.single("emoji"), async (req: AuthRequest, res: Response) => {
     try {
         if (!req.file) return res.status(400).json({ success: false, msg: "File is not loaded" });
         const { name } = req.body;
-        if (!validateString(name, "username", 1, 32)) return res.status(400).json({ success: false, msg: "Invalid emoji name" });
+        if (!validateString(name, "username", 1, 32))
+            return res.status(400).json({ success: false, msg: "Invalid emoji name" });
 
-        const [insertedEmoji] = await connection.query("INSERT INTO emojis (name, uploader_id) VALUES (?, ?)", [name, req.userId]);
-        const outPath = path.join(emojisDir, `${insertedEmoji.insertId}.webp`);
+        const insertedEmoji = await db.insert(emojisTable).values({ name, uploaderId: req.userId }).$returningId();
+        const outPath = path.join(emojisDir, `${insertedEmoji[0].id}.webp`);
 
         // Converting and resizing image
-        await sharp(req.file.path).resize(EMOJI_SIZE, EMOJI_SIZE, { fit: "cover" }).toFormat("webp", { quality: 80 }).toFile(outPath);
+        await sharp(req.file.path)
+            .resize(EMOJI_SIZE, EMOJI_SIZE, { fit: "cover" })
+            .toFormat("webp", { quality: 80 })
+            .toFile(outPath);
 
         fs.unlinkSync(req.file.path);
 
-        res.json({ success: true, url: `/emojis/${insertedEmoji.insertId}.webp` });
+        res.json({ success: true, url: `/emojis/${insertedEmoji[0].id}.webp` });
         logger.info(`${formatUser({ id: req.userId, name: req.userName })} uploaded their custom emoji`);
     } catch (err) {
         logger.error(`Error loading custom emoji by user ${formatUser({ id: req.userId, name: req.userName })}:\n${err}`);
@@ -360,9 +328,15 @@ app.post("/register", async (req, res) => {
     try {
         const { email, username, password } = req.body;
         if (!validateString(email, "email", 1, 256)) return res.status(400).json({ msg: "Please enter valid email" });
-        if (!validateString(username, "username", 1, 64)) return res.status(400).json({ msg: "Username must be 1-64 characters and must consist of a-z A-Z 0-9 _ -" });
-        if (!validateString(password, "password", 6, 64)) return res.status(400).json({ msg: "Password must be 6-64 characters long and not contain any prohibited characters" });
-        const [results] = await connection.query("SELECT * FROM users WHERE name = ? OR email = ?", [username, email]);
+        if (!validateString(username, "username", 1, 64))
+            return res.status(400).json({ msg: "Username must be 1-64 characters and must consist of a-z A-Z 0-9 _ -" });
+        if (!validateString(password, "password", 6, 64))
+            return res
+                .status(400)
+                .json({ msg: "Password must be 6-64 characters long and not contain any prohibited characters" });
+        const results = await db.query.usersTable.findMany({
+            where: or(eq(usersTable.name, username), eq(usersTable.email, email)),
+        });
         if (results.length > 0) {
             return res.status(400).json({ msg: "User with such username or email exists" });
         }
@@ -370,10 +344,10 @@ app.post("/register", async (req, res) => {
             if (error) {
                 return res.status(400).json({ msg: "Error hashing password!" });
             }
-            const [inserted] = await connection.query("INSERT INTO users (name, email, password) VALUES (?, ?, ?)", [username, email, hash]);
-            const token = jwt.sign({ id: inserted.insertId, name: username, email: email }, JWT_SECRET, { expiresIn: "7d" });
-            logger.info(`${formatUser({ id: inserted.insertId, name: username })} just created an account!`);
-            return res.json({ id: inserted.insertId, token: token });
+            const inserted = await db.insert(usersTable).values({ name: username, email, password: hash }).$returningId();
+            const token = jwt.sign({ id: inserted[0].id, name: username, email: email }, JWT_SECRET, { expiresIn: "7d" });
+            logger.info(`${formatUser({ id: inserted[0].id, name: username })} just created an account!`);
+            return res.json({ id: inserted[0].id, token: token });
         });
     } catch (err) {
         logger.error(`Unexpected error happend while registering user account with data ${objectToJson(req.body)}`);
@@ -385,7 +359,7 @@ app.post("/register", async (req, res) => {
 app.post("/login", async (req, res) => {
     try {
         const { email, password } = req.body;
-        const [results] = await connection.query("SELECT * FROM users WHERE email = ?", [email]);
+        const results = await db.query.usersTable.findMany({ where: eq(usersTable.email, email) });
         if (results.length === 0) {
             return res.status(400).json({ msg: "User with such email does not exist" });
         }
@@ -435,19 +409,16 @@ app.post("/subscribe", async (req, res) => {
         if (!token) {
             return res.status(400).json({ ok: false, msg: "No token provided" });
         }
-        const decoded = jwt.verify(token, JWT_SECRET);
-        const [subscriptions] = await connection.query("SELECT subscription FROM subscriptions WHERE user_id=?", [decoded.id]);
+        const decoded = jwt.verify(token, JWT_SECRET) as TokenPayload;
+        const subscriptions = await db.query.subscriptionsTable.findMany({ where: eq(subscriptionsTable.userId, decoded.id) });
         let contin = true;
-        subscriptions.forEach((row) => {
+        subscriptions.forEach(row => {
             if (jsonToObject(row.subscription).endpoint == subscription.endpoint) {
                 contin = false;
             }
         });
         if (!contin) return res.status(400).json({ ok: false, msg: "This device has already subscribed" });
-        await connection.query("INSERT INTO subscriptions (user_id, subscription) VALUES (?, ?)", [decoded.id, JSON.stringify(subscription)]);
-        if (error) {
-            return res.status(400).json({ ok: false, msg: "MySQL error while saving subscription" });
-        }
+        await db.insert(subscriptionsTable).values({ userId: decoded.id, subscription: JSON.stringify(subscription) });
         return res.json({ ok: true });
     } catch (err) {
         logger.error(`Unexpected error happend while subscribing user to push messages with data ${objectToJson(req.body)}`);
@@ -463,11 +434,14 @@ io.use(async (socket, next) => {
     }
 
     try {
-        const decoded = jwt.verify(token, JWT_SECRET);
+        const decoded = jwt.verify(token, JWT_SECRET) as TokenPayload;
         socket.user = decoded;
-        const [chat_ids] = await connection.query("SELECT chat_id FROM chat_users WHERE user_id=?", [decoded.id]);
-        chat_ids.forEach((chat) => {
-            socket.join(`chat:${chat.chat_id}`);
+        const chat_ids = await db.query.chatUsersTable.findMany({
+            where: eq(chatUsersTable.userId, decoded.id),
+            columns: { chatId: true },
+        });
+        chat_ids.forEach(chat => {
+            socket.join(`chat:${chat.chatId}`);
         });
         socket.join("chat:1");
         next();
@@ -476,8 +450,8 @@ io.use(async (socket, next) => {
     }
 });
 
-io.on("connection", (socket) => {
-    socket.on("msg", async (data) => {
+io.on("connection", socket => {
+    socket.on("msg", async data => {
         try {
             if (!data || !data.text || !data.chat) {
                 socket.emit("error", { msg: "Message is empty or some required arguments are missing" });
@@ -485,54 +459,81 @@ io.on("connection", (socket) => {
             }
 
             // Saving to db
-            const [inserted] = await connection.query("INSERT INTO messages (chat_id, sender_id, content) VALUES (?, ?, ?)", [data.chat, socket.user.id, data.text]);
-            const [inserted_data] = await connection.query("SELECT id, UNIX_TIMESTAMP(sent_at) AS sent_at FROM messages WHERE id=?", [inserted.insertId]);
+            const inserted = await db
+                .insert(messagesTable)
+                .values({ chatId: data.chat, senderId: socket.user.id, content: data.text })
+                .$returningId();
+            const inserted_data = await db.query.messagesTable.findFirst({
+                where: eq(messagesTable.id, inserted[0].id),
+            });
 
             // Getting avatar
-            const [avatar] = await connection.query("SELECT avatar FROM users WHERE id=?", [socket.user.id]);
-            const author_avatar = avatar[0]?.avatar || null;
+            const avatar = await db.query.usersTable.findFirst({
+                where: eq(usersTable.id, socket.user.id),
+                columns: { avatar: true },
+            });
+            const author_avatar = avatar?.avatar || null;
 
             // Sending to everyone
             const to_send = {
-                id: inserted.insertId,
+                id: inserted[0].id,
                 text: data.text,
                 author_id: socket.user.id,
                 author_avatar: author_avatar,
                 author: socket.user.name,
                 chat: data.chat,
-                sent_at: inserted_data[0].sent_at,
+                sent_at: inserted_data.sentAt.getTime() / 1000,
             };
             io.to(`chat:${data.chat}`).emit("message", to_send);
 
             // Sending webpush messages
-            const [chat_users] = await connection.query("SELECT user_id FROM chat_users WHERE chat_id=?", [data.chat]);
-            chat_users.forEach(async (row) => {
-                const [subscriptions] = await connection.query("SELECT id, subscription FROM subscriptions WHERE user_id = ?", [row.user_id]);
-                if (row.user_id != socket.user.id) {
-                    const [results] = await connection.query(
-                        `SELECT
-                            CASE
-                                WHEN chats.type = 'private' THEN (
-                                    SELECT u.name
-                                    FROM chat_users cu
-                                    JOIN users u ON cu.user_id = u.id
-                                    WHERE cu.chat_id = chats.id AND cu.user_id != ?
+            const chat_users = await db.query.chatUsersTable.findMany({
+                where: eq(chatUsersTable.chatId, data.chat),
+                columns: { userId: true },
+            });
+            chat_users.forEach(async row => {
+                const subscriptions = await db.query.subscriptionsTable.findMany({
+                    where: eq(subscriptionsTable.userId, row.userId),
+                    columns: { id: true, subscription: true },
+                });
+                if (row.userId != socket.user.id) {
+                    const results = await db
+                        .select({
+                            name: sql<string>`
+                                CASE
+                                    WHEN ${chatsTable.type} = 'private' THEN (
+                                    SELECT ${usersTable.name}
+                                    FROM ${chatUsersTable}
+                                    JOIN ${usersTable} ON ${chatUsersTable.userId} = ${usersTable.id}
+                                    WHERE ${chatUsersTable.chatId} = ${chatsTable.id}
+                                        AND ${chatUsersTable.userId} != ${row.userId}
                                     LIMIT 1
-                                )
-                                ELSE chats.name
-                            END AS name
-                        FROM chats
-                        WHERE chats.id IN (
-                            SELECT chat_id FROM chat_users WHERE user_id = ? AND chat_id = ?
-                        )`,
-                        [row.user_id, row.user_id, data.chat],
-                    );
+                                    )
+                                    ELSE ${chatsTable.name}
+                                END
+                            `,
+                        })
+                        .from(chatsTable)
+                        .where(
+                            inArray(
+                                chatsTable.id,
+                                db
+                                    .select({ chatId: chatUsersTable.chatId })
+                                    .from(chatUsersTable)
+                                    .where(and(eq(chatUsersTable.userId, row.userId), eq(chatUsersTable.chatId, data.chat))),
+                            ),
+                        );
                     if (results.length > 0) {
-                        const payload = JSON.stringify({ chat: results[0].name, author: socket.user.id, authorAvatar: author_avatar, message: data.text });
+                        const payload = JSON.stringify({
+                            chat: results[0].name,
+                            author: socket.user.id,
+                            authorAvatar: author_avatar,
+                            message: data.text,
+                        });
                         let sentCount = 0;
 
-                        subscriptions.forEach((sub) => {
-                            let subscription;
+                        subscriptions.forEach(sub => {
+                            let subscription: any;
                             try {
                                 if (typeof sub.subscription == "string") {
                                     subscription = JSON.parse(sub.subscription);
@@ -544,9 +545,12 @@ io.on("connection", (socket) => {
                                     .then(() => {
                                         sentCount++;
                                     })
-                                    .catch((err) => {
+                                    .catch(err => {
                                         console.error("Push failed for", subscription.endpoint, err);
-                                        connection.query("DELETE FROM subscriptions WHERE id=?", sub.id);
+                                        db.delete(subscriptionsTable)
+                                            .where(eq(subscriptionsTable.id, sub.id))
+                                            .execute()
+                                            .catch();
                                     });
                             } catch (error) {
                                 console.log(error);
@@ -557,10 +561,20 @@ io.on("connection", (socket) => {
             });
 
             // Sending FCM messages
-            const [users] = await connection.query("SELECT user_id FROM chat_users WHERE chat_id=?", [data.chat]);
-            const usersFiltered = users.filter((user) => user.user_id !== socket.user.id);
-            if (usersFiltered.length) {
-                const [tokens] = await connection.query("SELECT token FROM fcm_tokens WHERE user_id IN (?)", [usersFiltered.map((user) => user.user_id)]);
+            const users = await db.query.chatUsersTable.findMany({
+                where: and(eq(chatUsersTable.chatId, data.chat), ne(chatUsersTable.userId, socket.user.id)),
+                columns: { userId: true },
+            });
+            if (users.length) {
+                const tokens = await db.query.fcmTokensTable.findMany({
+                    where: inArray(
+                        fcmTokensTable.userId,
+                        users.map(user => user.userId),
+                    ),
+                    columns: {
+                        token: true,
+                    },
+                });
 
                 if (tokens.length) {
                     await fcm.sendEachForMulticast({
@@ -576,7 +590,7 @@ io.on("connection", (socket) => {
                         android: {
                             priority: "high",
                         },
-                        tokens: tokens.map((token) => token.token),
+                        tokens: tokens.map(token => token.token),
                     });
                 }
             }
@@ -587,54 +601,53 @@ io.on("connection", (socket) => {
         }
     });
 
-    socket.on("getChatHistory", async (data) => {
+    socket.on("getChatHistory", async data => {
         try {
             if (!data || !data.chat) {
                 socket.emit("error", { msg: "Chat ID is required to get chat history" });
                 return;
             }
             logger.info(`${formatUser(socket.user)} requested history of chat ${data.chat || "Unknown"}`);
-            const [history] = await connection.query(
-                `SELECT * FROM (
-                SELECT
-                    messages.id,
-                    messages.chat_id,
-                    messages.content,
-                    UNIX_TIMESTAMP(messages.sent_at) AS sent_at,
-                    messages.sender_id,
-                    messages.seen,
-                    users.name AS sender_name,
-                    users.avatar AS sender_avatar
-                FROM messages
-                JOIN users ON messages.sender_id = users.id
-                WHERE messages.chat_id = ?
-                ORDER BY messages.sent_at DESC
-                LIMIT 100 OFFSET ?
-            ) AS sub
-            ORDER BY sub.sent_at ASC;
-            `,
-                [data.chat, data.currentMessages || 0],
-            );
-            const maxId = Math.max(...history.map((hist) => hist.id));
-            const messages = history.map((msg) => ({
+            const sub = db
+                .select({
+                    id: messagesTable.id,
+                    chatId: messagesTable.chatId,
+                    content: messagesTable.content,
+                    sentAt: sql<number>`UNIX_TIMESTAMP(${messagesTable.sentAt})`.as("sent_at"),
+                    senderId: messagesTable.senderId,
+                    seen: messagesTable.seen,
+                    senderName: usersTable.name,
+                    senderAvatar: usersTable.avatar,
+                })
+                .from(messagesTable)
+                .innerJoin(usersTable, eq(messagesTable.senderId, usersTable.id))
+                .where(eq(messagesTable.chatId, data.chat))
+                .orderBy(desc(messagesTable.sentAt))
+                .limit(100)
+                .offset(data.currentMessages || 0)
+                .as("sub");
+
+            const history = await db.select().from(sub).orderBy(asc(sub.sentAt));
+
+            const maxId = Math.max(...history.map(hist => hist.id));
+            const messages = history.map(msg => ({
                 id: msg.id,
-                chat_id: msg.chat_id,
-                author_id: msg.sender_id,
-                author_avatar: msg.sender_avatar,
-                author: msg.sender_name,
+                chat_id: msg.chatId,
+                author_id: msg.senderId,
+                author_avatar: msg.senderAvatar,
+                author: msg.senderName,
                 text: msg.content,
-                sent_at: msg.sent_at,
+                sent_at: msg.sentAt,
                 seen: msg.seen,
             }));
             socket.emit("history", { chat: data.chat, messages: messages, lastIndex: maxId });
-            console.log(messages);
         } catch (err) {
             logger.error(`Unexpected error happend while sending chat history to ${formatUser(socket.user)}:\n${err}`);
             socket.emit("error", { msg: "Unexpected error happend while sending chat history" });
         }
     });
 
-    socket.on("getName", async (data) => {
+    socket.on("getName", async data => {
         try {
             socket.emit("username", socket.user.name);
         } catch (error) {
@@ -642,7 +655,7 @@ io.on("connection", (socket) => {
         }
     });
 
-    socket.on("createChat", async (data) => {
+    socket.on("createChat", async data => {
         try {
             if (!data || !data.nickname) {
                 socket.emit("createChatResult", { success: false, msg: "Nickname is required" });
@@ -652,78 +665,104 @@ io.on("connection", (socket) => {
                 socket.emit("createChatResult", { success: false, msg: "Cannot create chat with yourself" });
                 return;
             }
-            const [user_ids] = await connection.query("SELECT id FROM users WHERE name = ?", [data.nickname]);
-            if (user_ids.length === 0) {
+            const userIds = await db.query.usersTable.findMany({
+                where: eq(usersTable.name, data.nickname),
+                columns: { id: true },
+            });
+            if (userIds.length === 0) {
                 socket.emit("createChatResult", { success: false, msg: "No such user" });
                 return;
             }
-            const userId = user_ids[0].id;
+            const userId = userIds[0].id;
             const chatUsers = [socket.user.id, userId];
             const chatName = chatUsers.sort().join("-");
-            const [chat_id] = await connection.query("SELECT id FROM chats WHERE name = ?", [chatName]);
-            if (chat_id.length > 0) {
+            const chat_id = await db.query.chatsTable.findFirst({
+                where: eq(chatsTable.name, chatName),
+                columns: { id: true },
+            });
+            if (chat_id) {
                 socket.emit("createChatResult", { success: false, msg: "Chat already exists" });
                 return;
             }
-            const [inserted_chat] = await connection.query("INSERT INTO chats (type, name) VALUES (?, ?)", ["private", chatName]);
+            const insertedChat = await db.insert(chatsTable).values({ type: "private", name: chatName }).$returningId();
             for (let id of chatUsers) {
-                await connection.query("INSERT INTO chat_users (chat_id, user_id) VALUES (?, ?)", [inserted_chat.insertId, id]);
+                await db.insert(chatUsersTable).values({ chatId: insertedChat[0].id, userId: id });
             }
-            socket.emit("createChatResult", { success: true, chatId: inserted_chat.insertId, chatName: chatName, users: chatUsers });
+            socket.emit("createChatResult", {
+                success: true,
+                chatId: insertedChat[0].id,
+                chatName: chatName,
+                users: chatUsers,
+            });
         } catch (error) {
             socket.emit("createChatResult", { success: false, msg: "Unexpected error while creating chat" });
-            logger.error(`Unexpected error happend while trying to create chat by ${formatUser(socket.user)} with ${data.nickname || "Unknown"}:\n${error}`);
+            logger.error(
+                `Unexpected error happend while trying to create chat by ${formatUser(socket.user)} with ${data.nickname || "Unknown"}:\n${error}`,
+            );
         }
     });
 
-    socket.on("getChats", async (data) => {
+    socket.on("getChats", async data => {
         try {
             // logger.info(`Gettings chats for user ${formatUser(socket.user)}...`);
-            const [chats] = await connection.query(
-                `
-                SELECT
-                    chats.id,
-                    chats.type,
-                    CASE
-                        WHEN chats.type = 'private' THEN (
-                            SELECT u.name
-                            FROM chat_users cu
-                            JOIN users u ON cu.user_id = u.id
-                            WHERE cu.chat_id = chats.id AND cu.user_id != ?
-                            LIMIT 1
-                        )
-                        ELSE chats.name
-                    END AS name
-                FROM chats
-                WHERE chats.id IN (
-                    SELECT chat_id FROM chat_users WHERE user_id = ?
-                )
-            `,
-                [socket.user.id, socket.user.id],
-            );
+
+            const otherUser = db
+                .select({
+                    chatId: chatUsersTable.chatId,
+                    name: usersTable.name,
+                })
+                .from(chatUsersTable)
+                .innerJoin(usersTable, eq(chatUsersTable.userId, usersTable.id))
+                .where(ne(chatUsersTable.userId, socket.user.id))
+                .as("other_user");
+
+            const chats = await db
+                .select({
+                    id: chatsTable.id,
+                    type: chatsTable.type,
+                    name: sql<string>`
+                  CASE
+                    WHEN ${chatsTable.type} = 'private' THEN ${otherUser.name}
+                    ELSE ${chatsTable.name}
+                  END
+                `.as("name"),
+                })
+                .from(chatsTable)
+                .leftJoin(otherUser, eq(otherUser.chatId, chatsTable.id))
+                .where(
+                    inArray(
+                        chatsTable.id,
+                        db
+                            .select({ chatId: chatUsersTable.chatId })
+                            .from(chatUsersTable)
+                            .where(eq(chatUsersTable.userId, socket.user.id)),
+                    ),
+                );
+
             // logger.info(`Gettings chats for user ${formatUser(socket.user)}: Database query executed`);
             if (chats.length <= 0) {
                 socket.emit("chats", { chats: [] });
                 return;
             }
             // logger.info(`Gettings chats for user ${formatUser(socket.user)}: User has chats`);
-            const chatIds = chats.map((c) => c.id);
-            const [participants] = await connection.query(
-                `
-                SELECT cu.chat_id, u.id as user_id, u.name, u.avatar
-                FROM chat_users cu
-                JOIN users u ON cu.user_id = u.id
-                WHERE cu.chat_id IN (?)
-            `,
-                [chatIds],
-            );
+            const chatIds = chats.map(c => c.id);
+            const participants = await db
+                .select({
+                    chatId: chatUsersTable.chatId,
+                    userId: usersTable.id,
+                    username: usersTable.name,
+                    avatar: usersTable.avatar,
+                })
+                .from(chatUsersTable)
+                .leftJoin(usersTable, eq(chatUsersTable.userId, usersTable.id))
+                .where(inArray(chatUsersTable.chatId, chatIds));
             // logger.info(`Getting chats for user ${formatUser(socket.user)}: Participants fetched`);
             const participantsByChat = {};
             for (const p of participants) {
-                if (!participantsByChat[p.chat_id]) participantsByChat[p.chat_id] = [];
-                participantsByChat[p.chat_id].push({ id: p.user_id, name: p.name, avatar: p.avatar });
+                if (!participantsByChat[p.chatId]) participantsByChat[p.chatId] = [];
+                participantsByChat[p.chatId].push({ id: p.userId, name: p.username, avatar: p.avatar });
             }
-            const chatsWithParticipants = chats.map((chat) => ({
+            const chatsWithParticipants = chats.map(chat => ({
                 ...chat,
                 participants: participantsByChat[chat.id] || [],
             }));
@@ -736,27 +775,33 @@ io.on("connection", (socket) => {
         }
     });
 
-    socket.on("getUserInfo", async (data) => {
+    socket.on("getUserInfo", async data => {
         if (!data || (!data.id && !data.name)) {
             socket.emit("error", { msg: "No data provided" });
             return;
         }
-        const [results] = await connection.query("SELECT id, name, avatar FROM users WHERE id = ? OR name = ?", [data.id || 0, data.name || ""]);
-        socket.emit("userInfo", { user: results[0] });
+        const user = await db.query.usersTable.findFirst({
+            where: or(eq(usersTable.id, data.id || 0), eq(usersTable.name, data.name || "")),
+            columns: { id: true, name: true, avatar: true },
+        });
+        socket.emit("userInfo", { user });
     });
 
-    socket.on("getChatWith", async (data) => {
+    socket.on("getChatWith", async data => {
         if (!data || (!data.id && !data.name)) {
             socket.emit("error", { msg: "No data provided" });
             return;
         }
-        const [user_id] = await connection.query("SELECT id FROM users WHERE id = ? OR name = ?", [data.id || 0, data.name || ""]);
-        data.id = user_id[0].id;
+        const user_id = await db.query.usersTable.findFirst({
+            where: or(eq(usersTable.id, data.id || 0), eq(usersTable.name, data.name || "")),
+            columns: { id: true },
+        });
+        data.id = user_id.id;
         const chatUsers = [socket.user.id, data.id];
         const chatName = chatUsers.sort().join("-");
-        const [results] = await connection.query("SELECT id FROM chats WHERE name=?", [chatName]);
-        if (results.length > 0) {
-            socket.emit("getChatWithResult", { chatId: results[0].id });
+        const chat = await db.query.chatsTable.findFirst({ where: eq(chatsTable.name, chatName), columns: { id: true } });
+        if (chat) {
+            socket.emit("getChatWithResult", { chatId: chat.id });
             return;
         } else {
             socket.emit("getChatWithResult", { chatId: -1 });
@@ -764,9 +809,9 @@ io.on("connection", (socket) => {
         }
     });
 
-    socket.on("getCustomEmojis", async (data) => {
+    socket.on("getCustomEmojis", async data => {
         try {
-            const [emojis] = await connection.query("SELECT * FROM emojis WHERE uploader_id = ?", [socket.user.id]);
+            const emojis = await db.query.emojisTable.findMany({ where: eq(emojisTable.uploaderId, socket.user.id) });
             socket.emit("customEmojis", { emojis: emojis });
         } catch (error) {
             socket.emit("error", { msg: "Unexpected error while getting custom emojis" });
@@ -774,13 +819,16 @@ io.on("connection", (socket) => {
         }
     });
 
-    socket.on("seenAll", async (data) => {
+    socket.on("seenAll", async data => {
         try {
             if (!data || !data.chat) {
                 socket.emit("error", { msg: "Chat ID is required" });
                 return;
             }
-            await connection.query("UPDATE messages SET seen=1, seen_at=CURRENT_TIMESTAMP WHERE chat_id=? AND sender_id!=?", [data.chat, socket.user.id]);
+            await db
+                .update(messagesTable)
+                .set({ seen: true, seenAt: sql`CURRENT_TIMESTAMP` })
+                .where(and(eq(messagesTable.chatId, data.chat), ne(messagesTable.senderId, socket.user.id)));
             io.to(`chat:${data.chat}`).emit("seenAll", { chat: data.chat });
         } catch (error) {
             socket.emit("error", { msg: "Unexpected error happend while marking messages as seen" });
@@ -789,53 +837,62 @@ io.on("connection", (socket) => {
     });
 
     // Command for deleting messages
-    socket.on("deleteMessage", async (data) => {
+    socket.on("deleteMessage", async data => {
         try {
             if (!data || !data.message) return socket.emit("error", { msg: "Message ID is required" });
 
-            const [messagesToDelete] = await connection.query("SELECT * FROM messages WHERE id=?", [data.message]);
-            if (messagesToDelete.length <= 0) return socket.emit("error", { msg: "No such message" });
-            const messageToDelete = messagesToDelete[0];
-            await connection.query("DELETE FROM messages WHERE id=?", [messageToDelete.id]);
-            io.to(`chat:${messageToDelete.chat_id}`).emit("deleteMessage", { message: messageToDelete.id });
+            const messageToDelete = await db.query.messagesTable.findFirst({ where: eq(messagesTable.id, data.message) });
+            if (!messageToDelete) return socket.emit("error", { msg: "No such message" });
+            await db.delete(messagesTable).where(eq(messagesTable.id, messageToDelete.id));
+            io.to(`chat:${messageToDelete.chatId}`).emit("deleteMessage", { message: messageToDelete.id });
         } catch (error) {
             socket.emit("error", { msg: "Unexpected error happend while deleting message" });
-            logger.error(`Unexpected error happend while deleting message with id ${data.message || "Unknown"} by ${formatUser(socket.user)}:\n${error}`);
+            logger.error(
+                `Unexpected error happend while deleting message with id ${data.message || "Unknown"} by ${formatUser(socket.user)}:\n${error}`,
+            );
         }
     });
 
     // For voice chat
-    socket.on("joinVoice", async (data) => {
+    socket.on("joinVoice", async data => {
         if (!data || !data.chat) {
             socket.emit("error", { msg: "Chat ID is required" });
             return;
         }
         socket.join(`voice:${data.chat}`);
         const sockets = await io.in(`voice:${data.chat}`).fetchSockets();
-        const participants = sockets.map((socket) => {
+        const participants = sockets.map((socket: any) => {
             return { id: socket.user.id, name: socket.user.name };
         });
-        socket.emit("joinedVoice", { role: (io.sockets.adapter.rooms.get(`voice:${data.chat}`)?.size || 0) >= 2 ? "answer" : "offer", participants });
+        socket.emit("joinedVoice", {
+            role: (io.sockets.adapter.rooms.get(`voice:${data.chat}`)?.size || 0) >= 2 ? "answer" : "offer",
+            participants,
+        });
         socket.to(`voice:${data.chat}`).emit("userJoined", { user: socket.user });
     });
 
-    socket.on("voiceAction", (data) => {
+    socket.on("voiceAction", data => {
         socket.to(`voice:${data.chat}`).emit("voiceAction", data);
     });
 
     // Getting turn credentials for specific chat
-    socket.on("getTurnUrls", async (data) => {
+    socket.on("getTurnUrls", async data => {
         try {
             if (!data || !data.chat) {
                 return socket.emit("error", { msg: "Chat ID is required" });
             }
-            const [chatExists] = await connection.query("SELECT id FROM chats WHERE id=?", [data.chat]);
-            if (chatExists.length === 0) {
+            const chatExists = await db.query.chatsTable.findFirst({
+                where: eq(chatsTable.id, data.chat),
+                columns: { id: true },
+            });
+            if (chatExists) {
                 return socket.emit("error", { msg: "No such chat" });
             }
             if (data.chat !== 1) {
-                const [isInChat] = await connection.query("SELECT * FROM chat_users WHERE chat_id=? AND user_id=?", [data.chat, socket.user.id]);
-                if (isInChat.length === 0) {
+                const isInChat = await db.query.chatUsersTable.findFirst({
+                    where: and(eq(chatUsersTable.chatId, data.chat), eq(chatUsersTable.userId, socket.user.id)),
+                });
+                if (!isInChat) {
                     return socket.emit("error", { msg: "You are not in this chat" });
                 }
             }
@@ -843,18 +900,23 @@ io.on("connection", (socket) => {
             socket.emit("turnUrls", { urls: urls });
         } catch (error) {
             socket.emit("error", { msg: "Unexpected error while getting turn credentials" });
-            logger.error(`Unexpected error while getting turn credentials for chat ${data.chat} by ${formatUser(socket.user)}:\n${error}`);
+            logger.error(
+                `Unexpected error while getting turn credentials for chat ${data.chat} by ${formatUser(socket.user)}:\n${error}`,
+            );
         }
     });
 
     // Adding FCM token
-    socket.on("addFcmToken", async (data) => {
+    socket.on("addFcmToken", async data => {
         try {
-            const [tokenExists] = await connection.query("SELECT id FROM fcm_tokens WHERE token=?", [data.token]);
-            if (tokenExists.length > 0) {
+            const tokenExists = await db.query.fcmTokensTable.findFirst({
+                where: eq(fcmTokensTable.token, data.token),
+                columns: { id: true },
+            });
+            if (tokenExists) {
                 return socket.emit("error", { msg: "Token already exists", hidden: true });
             }
-            await connection.query("INSERT INTO fcm_tokens (token, user_id) VALUES (?, ?)", [data.token, socket.user.id]);
+            await db.insert(fcmTokensTable).values({ token: data.token, userId: socket.user.id });
         } catch (error) {
             socket.emit("error", { msg: "Unexpected error while adding FCM token" });
             logger.error(`Unexpected error while adding FCM token by ${formatUser(socket.user)}:\n${error}`);
@@ -862,33 +924,32 @@ io.on("connection", (socket) => {
     });
 
     // Get only one message from specific chat
-    socket.on("getMessage", async (data) => {
+    socket.on("getMessage", async data => {
         try {
             if (!data || !data.messageId) {
                 return socket.emit("error", { msg: "messageId is required" });
             }
-            const [message] = await connection.query("SELECT * FROM messages WHERE id=?", [data.messageId]);
-            if (!message.length) {
+            const message = await db.query.messagesTable.findFirst({ where: eq(messagesTable.id, data.messageId) });
+            if (!message) {
                 return socket.emit("error", { msg: "Message not found", hidden: true });
             }
-            if (message[0].chat_id !== 1) {
-                const [inChat] = await connection.query("SELECT * FROM chat_users WHERE chat_id=? AND user_id=?", [message[0].chat_id, socket.user.id]);
-                if (!inChat.length) {
+            if (message.chatId !== 1) {
+                const inChat = await db.query.chatUsersTable.findFirst({
+                    where: and(eq(chatUsersTable.chatId, message.chatId), eq(chatUsersTable.userId, socket.user.id)),
+                });
+                if (!inChat) {
                     return socket.emit("error", { msg: "You are not in this chat" });
                 }
             }
             socket.emit("requestedMessage", { message: message[0] });
         } catch (error) {
             socket.emit("error", { msg: "Unexpected error while getting message" });
-            logger.error(`Unexpected error while getting message from chat ${data.chat} by ${formatUser(socket.user)}:\n${error}`);
+            logger.error(
+                `Unexpected error while getting message from chat ${data.chat} by ${formatUser(socket.user)}:\n${error}`,
+            );
         }
     });
 });
-
-// Pinging MySQL connection every minute
-setInterval(() => {
-    connection.ping();
-}, 60000);
 
 // Starting server
 const PORT = process.env.PORT || 5000;
