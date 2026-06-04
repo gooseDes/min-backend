@@ -29,6 +29,7 @@ initAdmin();
 
 const EMOJI_SIZE = 96;
 const AVATAR_SIZE = 512;
+const MAX_ATTACHMENT_SIZE = 2048;
 
 const logsDir = "logs";
 if (!fs.existsSync(logsDir)) fs.mkdirSync(logsDir);
@@ -252,7 +253,16 @@ app.post("/attach", authMiddleware, upload.array("attachments", 5), async (req: 
             const outPath = path.join(attachmentsDir, newFilename);
 
             if (isImage) {
-                await sharp(file.path).rotate().webp({ quality: 85 }).toFile(outPath);
+                await sharp(file.path)
+                    .rotate()
+                    .resize({
+                        width: MAX_ATTACHMENT_SIZE,
+                        height: MAX_ATTACHMENT_SIZE,
+                        fit: sharp.fit.inside,
+                        withoutEnlargement: true,
+                    })
+                    .webp({ quality: 85 })
+                    .toFile(outPath);
                 fs.unlinkSync(file.path);
             } else {
                 // fs.renameSync(file.path, outPath);
