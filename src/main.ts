@@ -61,7 +61,7 @@ const logger = pino(
 
 logger.info("Setting things up...");
 
-const origins = process.env.CORS_ORIGIN ?? ["http://localhost:3000", "https://web.msg-min.xyz"];
+const origins = ["http://localhost:3000", "https://web.msg-min.xyz"];
 
 const app = express();
 const server = createServer(app);
