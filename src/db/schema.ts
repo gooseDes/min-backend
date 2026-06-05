@@ -22,7 +22,7 @@ export const chatUsersTable = mysqlTable(
             .references(() => chatsTable.id, { onDelete: "cascade" }),
         userId: int("user_id")
             .notNull()
-            .references(() => users.id, { onDelete: "cascade" }),
+            .references(() => usersTable.id, { onDelete: "cascade" }),
     },
     t => [primaryKey({ columns: [t.chatId, t.userId] })],
 );
@@ -34,7 +34,7 @@ export const messagesTable = mysqlTable("messages", {
         .references(() => chatsTable.id, { onDelete: "cascade" }),
     senderId: int("sender_id")
         .notNull()
-        .references(() => users.id),
+        .references(() => usersTable.id),
     content: text("content").notNull(),
     sentAt: timestamp("sent_at").defaultNow(),
     seen: boolean("seen").default(false),
@@ -45,7 +45,7 @@ export const subscriptionsTable = mysqlTable("subscriptions", {
     id: int("id").primaryKey().autoincrement(),
     userId: int("user_id")
         .notNull()
-        .references(() => users.id, { onDelete: "cascade" }),
+        .references(() => usersTable.id, { onDelete: "cascade" }),
     subscription: json("subscription").notNull(),
     createdAt: timestamp("created_at").defaultNow(),
 });
@@ -55,7 +55,7 @@ export const emojisTable = mysqlTable("emojis", {
     name: varchar("name", { length: 64 }).notNull(),
     uploaderId: int("uploader_id")
         .notNull()
-        .references(() => users.id, { onDelete: "cascade" }),
+        .references(() => usersTable.id, { onDelete: "cascade" }),
 });
 
 export const turnKeysTable = mysqlTable("turn_keys", {
@@ -74,5 +74,5 @@ export const fcmTokensTable = mysqlTable("fcm_tokens", {
     createdAt: timestamp("created_at").defaultNow(),
     userId: int("user_id")
         .notNull()
-        .references(() => users.id, { onDelete: "cascade" }),
+        .references(() => usersTable.id, { onDelete: "cascade" }),
 });

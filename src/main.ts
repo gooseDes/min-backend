@@ -1,6 +1,7 @@
 import bcrypt from "bcrypt";
 import cors from "cors";
 import { and, asc, desc, eq, inArray, ne, or, sql } from "drizzle-orm";
+import { migrate } from "drizzle-orm/mysql2/migrator";
 import express, { Request, Response } from "express";
 import fs from "fs";
 import { createServer } from "http";
@@ -60,7 +61,7 @@ const logger = pino(
 
 logger.info("Setting things up...");
 
-const origins = ["http://localhost:3000", "http://192.168.0.120:3000", "https://web.msg-min.xyz"];
+const origins = process.env.CORS_ORIGIN ?? ["http://localhost:3000", "https://web.msg-min.xyz"];
 
 const app = express();
 const server = createServer(app);
@@ -101,6 +102,8 @@ const defaultEmoji = path.join(imagesDir, "no_image.webp");
 const upload = multer({ dest: path.join(uploadsDir, "temp"), limits: { fileSize: 10 * 1024 * 1024 } });
 
 const JWT_SECRET = process.env.JWT_SECRET || "defaultsecret";
+
+await migrate(db, { migrationsFolder: "./drizzle/migrations" });
 
 await db
     .insert(chatsTable)

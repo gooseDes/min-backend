@@ -5,7 +5,7 @@
     "main": "src/main.ts",
     "scripts": {
         "db": "node show_tables.js",
-        "start": "npx tsx --env-file .env src/main.ts",
+        "start": "NODE_ENV=production npx tsx --env-file .env src/main.ts",
         "dev": "npx tsx --env-file .env --watch src/main.ts",
         "deploy": "git push origin main:release -f"
     },
