@@ -954,7 +954,7 @@ io.on("connection", socket => {
                     return socket.emit("error", { msg: "You are not in this chat" });
                 }
             }
-            socket.emit("requestedMessage", { message: message[0] });
+            socket.emit("requestedMessage", { message: message });
         } catch (error) {
             socket.emit("error", { msg: "Unexpected error while getting message" });
             logger.error(
