@@ -629,6 +629,7 @@ io.on("connection", socket => {
                     sentAt: sql<number>`UNIX_TIMESTAMP(${messagesTable.sentAt})`.as("sent_at"),
                     senderId: messagesTable.senderId,
                     seen: messagesTable.seen,
+                    seenAt: sql<number>`UNIX_TIMESTAMP(${messagesTable.seenAt})`.as("seen_at"),
                     senderName: usersTable.name,
                     senderAvatar: usersTable.avatar,
                 })
@@ -652,6 +653,7 @@ io.on("connection", socket => {
                 text: msg.content,
                 sent_at: msg.sentAt,
                 seen: msg.seen,
+                seen_at: msg.seenAt,
             }));
             socket.emit("history", { chat: data.chat, messages: messages, lastIndex: maxId });
         } catch (err) {
