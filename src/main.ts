@@ -718,8 +718,8 @@ io.on("connection", socket => {
                 chatId: insertedChat[0].id,
                 chatName: user.name,
                 users: [
-                    { id: socket.user.id, name: socket.user.name, avatar: socket.user.avatar },
-                    { id: user.id, name: user.name, avatar: user.avatar },
+                    { id: socket.user.id, username: socket.user.name, avatar: socket.user.avatar },
+                    { id: user.id, username: user.name, avatar: user.avatar },
                 ],
             });
         } catch (error) {
