@@ -130,6 +130,10 @@ interface TokenPayload {
     email: string;
 }
 
+interface SocketUser extends TokenPayload {
+    avatar: string;
+}
+
 interface AuthRequest extends Request {
     userId?: number;
     userName?: string;
@@ -137,7 +141,7 @@ interface AuthRequest extends Request {
 
 declare module "socket.io" {
     interface Socket {
-        user?: TokenPayload;
+        user?: SocketUser;
     }
 }
 
@@ -448,7 +452,14 @@ io.use(async (socket, next) => {
 
     try {
         const decoded = jwt.verify(token, JWT_SECRET) as TokenPayload;
-        socket.user = decoded;
+        const user = await db.query.usersTable.findFirst({
+            where: eq(usersTable.id, decoded.id),
+            columns: { id: true, name: true, avatar: true },
+        });
+        if (!user) {
+            return next(new Error("User not found (╯°□°）╯︵ ┻━┻"));
+        }
+        socket.user = { ...user, ...decoded };
         const chat_ids = await db.query.chatUsersTable.findMany({
             where: eq(chatUsersTable.userId, decoded.id),
             columns: { chatId: true },
@@ -680,16 +691,15 @@ io.on("connection", socket => {
                 socket.emit("createChatResult", { success: false, msg: "Cannot create chat with yourself" });
                 return;
             }
-            const userIds = await db.query.usersTable.findMany({
+            const user = await db.query.usersTable.findFirst({
                 where: eq(usersTable.name, data.nickname),
-                columns: { id: true },
+                columns: { id: true, name: true, avatar: true },
             });
-            if (userIds.length === 0) {
+            if (!user) {
                 socket.emit("createChatResult", { success: false, msg: "No such user" });
                 return;
             }
-            const userId = userIds[0].id;
-            const chatUsers = [socket.user.id, userId];
+            const chatUsers = [socket.user.id, user.id];
             const chatName = chatUsers.sort().join("-");
             const chat_id = await db.query.chatsTable.findFirst({
                 where: eq(chatsTable.name, chatName),
@@ -706,8 +716,11 @@ io.on("connection", socket => {
             socket.emit("createChatResult", {
                 success: true,
                 chatId: insertedChat[0].id,
-                chatName: chatName,
-                users: chatUsers,
+                chatName: user.name,
+                users: [
+                    { id: socket.user.id, name: socket.user.name, avatar: socket.user.avatar },
+                    { id: user.id, name: user.name, avatar: user.avatar },
+                ],
             });
         } catch (error) {
             socket.emit("createChatResult", { success: false, msg: "Unexpected error while creating chat" });
