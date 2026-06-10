@@ -722,6 +722,11 @@ io.on("connection", socket => {
                     { id: user.id, username: user.name, avatar: user.avatar },
                 ],
             });
+            (await io.fetchSockets())
+                .filter((s: any) => chatUsers.includes(s.user.id))
+                .forEach(s => {
+                    s.join(`chat:${insertedChat[0].id}`);
+                });
         } catch (error) {
             socket.emit("createChatResult", { success: false, msg: "Unexpected error while creating chat" });
             logger.error(
