@@ -618,6 +618,7 @@ io.on("connection", socket => {
                     });
                 }
             }
+            socket.emit("msgSent", {});
         } catch (error) {
             socket.emit("error", { msg: "Unexpected error while sending your message" });
             logger.error(`Unexpected error happend while sending message by ${formatUser(socket.user)}:\n${error}`);
@@ -878,6 +879,7 @@ io.on("connection", socket => {
             if (!messageToDelete) return socket.emit("error", { msg: "No such message" });
             await db.delete(messagesTable).where(eq(messagesTable.id, messageToDelete.id));
             io.to(`chat:${messageToDelete.chatId}`).emit("deleteMessage", { message: messageToDelete.id });
+            socket.emit("msgDeleted", {});
         } catch (error) {
             socket.emit("error", { msg: "Unexpected error happend while deleting message" });
             logger.error(
@@ -950,6 +952,7 @@ io.on("connection", socket => {
                 return socket.emit("error", { msg: "Token already exists", hidden: true });
             }
             await db.insert(fcmTokensTable).values({ token: data.token, userId: socket.user.id });
+            socket.emit("fcmTokenAdded", {});
         } catch (error) {
             socket.emit("error", { msg: "Unexpected error while adding FCM token" });
             logger.error(`Unexpected error while adding FCM token by ${formatUser(socket.user)}:\n${error}`);
