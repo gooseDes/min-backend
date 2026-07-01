@@ -67,6 +67,8 @@ const origins = [
     "https://dev.msg-min.xyz",
     "https://web.msgmin.com",
     "https://dev.msgmin.com",
+    "tauri://localhost",
+    "http://tauri.localhost",
 ];
 
 const app = express();
