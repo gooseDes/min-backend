@@ -61,7 +61,13 @@ const logger = pino(
 
 logger.info("Setting things up...");
 
-const origins = ["http://localhost:3000", "https://web.msg-min.xyz", "https://dev.msg-min.xyz"];
+const origins = [
+    "http://localhost:3000",
+    "https://web.msg-min.xyz",
+    "https://dev.msg-min.xyz",
+    "https://web.msgmin.com",
+    "https://dev.msgmin.com",
+];
 
 const app = express();
 const server = createServer(app);
