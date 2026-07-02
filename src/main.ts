@@ -63,6 +63,7 @@ logger.info("Setting things up...");
 
 const origins = [
     "http://localhost:3000",
+    "http://localhost:5173",
     "https://web.msg-min.xyz",
     "https://dev.msg-min.xyz",
     "https://web.msgmin.com",
@@ -429,7 +430,7 @@ app.post("/verify", (req, res) => {
 // Route for subscribing to web push
 app.post("/subscribe", async (req, res) => {
     try {
-        const subscription = req.body.subscription;
+        const subscription = jsonToObject(req.body.subscription);
         const token = req.body.token;
         if (!token) {
             return res.status(400).json({ ok: false, msg: "No token provided" });
@@ -443,7 +444,7 @@ app.post("/subscribe", async (req, res) => {
             }
         });
         if (!contin) return res.status(400).json({ ok: false, msg: "This device has already subscribed" });
-        await db.insert(subscriptionsTable).values({ userId: decoded.id, subscription: JSON.stringify(subscription) });
+        await db.insert(subscriptionsTable).values({ userId: decoded.id, subscription: subscription });
         return res.json({ ok: true });
     } catch (err) {
         logger.error(`Unexpected error happend while subscribing user to push messages with data ${objectToJson(req.body)}`);
@@ -529,7 +530,7 @@ io.on("connection", socket => {
                     columns: { id: true, subscription: true },
                 });
                 if (row.userId != socket.user.id) {
-                    const results = await db
+                    /*const results = await db
                         .select({
                             name: sql<string>`
                                 CASE
@@ -554,24 +555,34 @@ io.on("connection", socket => {
                                     .from(chatUsersTable)
                                     .where(and(eq(chatUsersTable.userId, row.userId), eq(chatUsersTable.chatId, data.chat))),
                             ),
-                        );
-                    if (results.length > 0) {
+                            );*/
+                    const chatId = await db.query.chatUsersTable.findFirst({
+                        where: and(eq(chatUsersTable.userId, row.userId), eq(chatUsersTable.chatId, data.chat)),
+                        columns: { chatId: true },
+                    });
+
+                    if (chatId) {
+                        const chatUsers = await db
+                            .select({
+                                id: usersTable.id,
+                                name: usersTable.name,
+                                avatar: usersTable.avatar,
+                            })
+                            .from(usersTable)
+                            .innerJoin(chatUsersTable, eq(usersTable.id, chatUsersTable.userId))
+                            .where(eq(chatUsersTable.chatId, chatId.chatId));
+
                         const payload = JSON.stringify({
-                            chat: results[0].name,
-                            author: socket.user.id,
-                            authorAvatar: author_avatar,
+                            chat: { id: chatId.chatId, participants: chatUsers },
+                            author: { id: socket.user.id, username: socket.user.name, avatar: author_avatar },
                             message: data.text,
+                            recipient: { id: row.userId },
                         });
                         let sentCount = 0;
 
                         subscriptions.forEach(sub => {
-                            let subscription: any;
                             try {
-                                if (typeof sub.subscription == "string") {
-                                    subscription = JSON.parse(sub.subscription);
-                                } else {
-                                    subscription = sub.subscription;
-                                }
+                                const subscription = jsonToObject(sub.subscription);
                                 webpush
                                     .sendNotification(subscription, payload)
                                     .then(() => {
