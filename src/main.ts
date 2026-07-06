@@ -530,32 +530,6 @@ io.on("connection", socket => {
                     columns: { id: true, subscription: true },
                 });
                 if (row.userId != socket.user.id) {
-                    /*const results = await db
-                        .select({
-                            name: sql<string>`
-                                CASE
-                                    WHEN ${chatsTable.type} = 'private' THEN (
-                                    SELECT ${usersTable.name}
-                                    FROM ${chatUsersTable}
-                                    JOIN ${usersTable} ON ${chatUsersTable.userId} = ${usersTable.id}
-                                    WHERE ${chatUsersTable.chatId} = ${chatsTable.id}
-                                        AND ${chatUsersTable.userId} != ${row.userId}
-                                    LIMIT 1
-                                    )
-                                    ELSE ${chatsTable.name}
-                                END
-                            `,
-                        })
-                        .from(chatsTable)
-                        .where(
-                            inArray(
-                                chatsTable.id,
-                                db
-                                    .select({ chatId: chatUsersTable.chatId })
-                                    .from(chatUsersTable)
-                                    .where(and(eq(chatUsersTable.userId, row.userId), eq(chatUsersTable.chatId, data.chat))),
-                            ),
-                            );*/
                     const chatId = await db.query.chatUsersTable.findFirst({
                         where: and(eq(chatUsersTable.userId, row.userId), eq(chatUsersTable.chatId, data.chat)),
                         columns: { chatId: true },
@@ -837,7 +811,7 @@ io.on("connection", socket => {
             where: or(eq(usersTable.id, data.id || 0), eq(usersTable.name, data.name || "")),
             columns: { id: true, name: true, avatar: true },
         });
-        socket.emit("userInfo", { user });
+        socket.emit("userInfo", { user, requestId: data?.requestId });
     });
 
     socket.on("getChatWith", async data => {
@@ -996,7 +970,7 @@ io.on("connection", socket => {
                     return socket.emit("error", { msg: "You are not in this chat" });
                 }
             }
-            socket.emit("requestedMessage", { message: message });
+            socket.emit("requestedMessage", { message: message, requestId: data?.requestId });
         } catch (error) {
             socket.emit("error", { msg: "Unexpected error while getting message" });
             logger.error(
